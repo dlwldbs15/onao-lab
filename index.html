@@ -1,0 +1,841 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>오나오 랩</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --cream:#F5ECD9;
+    --cream-dark:#EAE0C8;
+    --card:#FFFDF8;
+    --walnut:#3E2E22;
+    --walnut-soft:#6B5847;
+    --sage:#7C9473;
+    --sage-dark:#5E7455;
+    --honey:#E8A33D;
+    --honey-dark:#C9821F;
+    --berry:#C6577A;
+    --line: rgba(62,46,34,0.12);
+    --shadow: 0 8px 24px rgba(62,46,34,0.10);
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--cream);color:var(--walnut);font-family:'Inter',sans-serif;}
+  .wrap{max-width:1180px;margin:0 auto;padding:28px 20px 80px;}
+
+  /* header */
+  header{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:22px;flex-wrap:wrap;}
+  .brand{display:flex;align-items:center;gap:12px;}
+  .brand .mark{font-size:34px;line-height:1;}
+  h1{font-family:'Baloo 2',sans-serif;font-size:30px;font-weight:800;margin:0;letter-spacing:-0.5px;}
+  .sub{font-size:13px;color:var(--walnut-soft);margin-top:2px;}
+  .save-btn{background:var(--walnut);color:var(--cream);border:none;border-radius:100px;padding:11px 20px;font-family:'Baloo 2';font-weight:700;font-size:14px;cursor:pointer;box-shadow:var(--shadow);transition:transform .15s ease;}
+  .save-btn:hover{transform:translateY(-2px);}
+  .save-btn:active{transform:translateY(0);}
+
+  /* recipe rail */
+  .rail{display:flex;gap:12px;overflow-x:auto;padding:6px 2px 16px;margin-bottom:14px;}
+  .rail::-webkit-scrollbar{height:6px;}
+  .rail::-webkit-scrollbar-thumb{background:var(--line);border-radius:10px;}
+  .rcard{flex:0 0 auto;width:150px;background:var(--card);border:2px solid transparent;border-radius:18px;padding:14px;cursor:pointer;box-shadow:var(--shadow);transition:border-color .15s ease, transform .15s ease;}
+  .rcard:hover{transform:translateY(-2px);}
+  .rcard.active{border-color:var(--honey);}
+  .rcard .em{font-size:26px;}
+  .rcard .nm{font-family:'Baloo 2';font-weight:700;font-size:14.5px;margin-top:6px;line-height:1.25;}
+  .rcard .tag{font-size:11px;color:var(--walnut-soft);margin-top:4px;}
+  .rcard.new{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;border:2px dashed var(--line);background:transparent;box-shadow:none;color:var(--walnut-soft);}
+  .rcard.new .em{font-size:22px;}
+
+  /* main grid */
+  .grid{display:grid;grid-template-columns:1.05fr 0.95fr;gap:20px;}
+  @media (max-width:880px){.grid{grid-template-columns:1fr;}}
+  .panel{background:var(--card);border-radius:22px;padding:22px;box-shadow:var(--shadow);}
+
+  /* bowl */
+  .bowl-stage{display:flex;flex-direction:column;align-items:center;padding-top:4px;}
+  .bowl-title{font-family:'Baloo 2';font-weight:700;font-size:16px;align-self:flex-start;margin-bottom:6px;}
+  .recipe-name-input{font-family:'Baloo 2';font-weight:700;font-size:16px;border:none;background:transparent;align-self:flex-start;margin-bottom:6px;color:var(--walnut);width:100%;padding:0;}
+  .recipe-name-input:focus{outline:none;border-bottom:1.5px dashed var(--honey);}
+  svg.bowl{width:220px;height:210px;}
+  .spoons-block{width:100%;margin-top:6px;}
+  .ing-row{display:flex;align-items:center;gap:10px;padding:10px 4px;border-bottom:1px solid var(--line);}
+  .ing-row:last-child{border-bottom:none;}
+  .ing-em{font-size:20px;width:26px;text-align:center;}
+  .ing-name{flex:1;font-size:13.5px;font-weight:600;}
+  .ing-info{cursor:pointer;border-radius:8px;}
+  .ing-info:hover .ing-name{color:var(--honey-dark);text-decoration:underline dotted;}
+  .info-kcal-hero{display:flex;align-items:baseline;gap:8px;margin:6px 0 14px;}
+  .info-kcal-hero .num{font-family:'Baloo 2';font-size:36px;font-weight:800;color:var(--honey-dark);line-height:1;}
+  .info-kcal-hero .per{font-size:12px;color:var(--walnut-soft);}
+  .info-table{width:100%;border-collapse:collapse;font-size:12.5px;}
+  .info-table th{text-align:left;font-weight:600;color:var(--walnut-soft);padding:6px 0;border-bottom:1px solid var(--line);font-size:11.5px;}
+  .info-table td{padding:7px 0;border-bottom:1px solid var(--line);}
+  .info-table td:nth-child(2), .info-table td:nth-child(3), .info-table th:nth-child(2), .info-table th:nth-child(3){text-align:right;font-family:'JetBrains Mono';}
+  .ing-spoons{display:flex;gap:2px;}
+  .spoon-icon{font-size:13px;opacity:0.18;}
+  .spoon-icon.filled{opacity:1;}
+  .stepper{display:flex;align-items:center;gap:8px;background:var(--cream-dark);border-radius:100px;padding:3px;}
+  .stepper button{width:22px;height:22px;border-radius:50%;border:none;background:var(--card);font-size:14px;font-weight:700;cursor:pointer;color:var(--walnut);line-height:1;}
+  .stepper button:hover{background:var(--honey);color:#fff;}
+  .stepper .val{font-family:'JetBrains Mono';font-size:12px;width:16px;text-align:center;}
+  .ing-remove{border:none;background:none;color:var(--berry);cursor:pointer;font-size:14px;opacity:0.55;padding:2px 4px;}
+  .ing-remove:hover{opacity:1;}
+
+  .add-ing-btn{margin-top:10px;width:100%;border:1.5px dashed var(--line);background:transparent;border-radius:14px;padding:10px;font-size:13px;font-weight:600;color:var(--walnut-soft);cursor:pointer;}
+  .add-ing-btn:hover{border-color:var(--honey);color:var(--honey-dark);}
+
+  /* liquid */
+  .liquid-block{margin-top:18px;width:100%;}
+  .liquid-title{font-family:'Baloo 2';font-weight:700;font-size:14px;margin-bottom:8px;}
+  .liquid-choices{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;}
+  .lchip{border:1.5px solid var(--line);background:var(--cream-dark);border-radius:100px;padding:7px 12px;font-size:12.5px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:5px;}
+  .lchip.active{border-color:var(--honey);background:#FBEBCB;}
+  .ml-row{display:flex;align-items:center;gap:10px;}
+  input[type=range]{flex:1;accent-color:var(--honey);}
+  .ml-val{font-family:'JetBrains Mono';font-size:12.5px;width:56px;text-align:right;color:var(--walnut-soft);}
+
+  /* nutrition panel */
+  .n-head{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:16px;}
+  .n-head h2{font-family:'Baloo 2';font-size:16px;margin:0;}
+  .kcal-big{font-family:'Baloo 2';font-size:44px;font-weight:800;color:var(--honey-dark);line-height:1;}
+  .kcal-label{font-size:11.5px;color:var(--walnut-soft);}
+  .macro-bars{display:flex;flex-direction:column;gap:10px;margin:16px 0 20px;}
+  .mbar-row{display:flex;align-items:center;gap:10px;}
+  .mbar-label{width:56px;font-size:12px;font-weight:600;}
+  .mbar-track{flex:1;height:10px;border-radius:100px;background:var(--cream-dark);overflow:hidden;}
+  .mbar-fill{height:100%;border-radius:100px;}
+  .mbar-val{width:52px;text-align:right;font-family:'JetBrains Mono';font-size:11.5px;color:var(--walnut-soft);}
+  .breakdown{border-top:1px solid var(--line);padding-top:14px;}
+  .b-row{display:flex;justify-content:space-between;font-size:12.5px;padding:5px 0;color:var(--walnut-soft);}
+  .b-row span:first-child{color:var(--walnut);font-weight:600;}
+  .note{font-size:11px;color:var(--walnut-soft);opacity:0.8;margin-top:14px;line-height:1.5;}
+
+  /* modal */
+  .overlay{position:fixed;inset:0;background:rgba(62,46,34,0.45);display:flex;align-items:center;justify-content:center;padding:20px;z-index:50;}
+  .modal{background:var(--card);border-radius:20px;padding:24px;width:100%;max-width:420px;max-height:86vh;overflow:auto;}
+  .modal h3{font-family:'Baloo 2';margin:0 0 14px;font-size:17px;}
+  .field{margin-bottom:12px;}
+  .field label{display:block;font-size:12px;font-weight:600;color:var(--walnut-soft);margin-bottom:5px;}
+  .field input, .field select{width:100%;padding:9px 10px;border-radius:10px;border:1.5px solid var(--line);font-family:'Inter';font-size:13px;background:var(--cream-dark);}
+  .field input:focus, .field select:focus{outline:none;border-color:var(--honey);}
+  .em-preview{display:flex;align-items:center;gap:8px;margin-top:4px;}
+  .em-preview .big{font-size:22px;}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  .pick-list{max-height:220px;overflow:auto;display:flex;flex-direction:column;gap:4px;margin-bottom:10px;}
+  .pick-item{display:flex;align-items:center;gap:8px;padding:8px 9px;border-radius:10px;cursor:pointer;font-size:13px;}
+  .pick-item:hover{background:var(--cream-dark);}
+  .modal-actions{display:flex;gap:8px;margin-top:16px;}
+  .modal-actions button{flex:1;padding:10px;border-radius:12px;border:none;font-weight:700;font-family:'Baloo 2';font-size:13.5px;cursor:pointer;}
+  .btn-primary{background:var(--honey);color:#fff;}
+  .btn-secondary{background:var(--cream-dark);color:var(--walnut);}
+  .close-x{position:absolute;top:16px;right:18px;border:none;background:none;font-size:18px;cursor:pointer;color:var(--walnut-soft);}
+  .modal{position:relative;}
+  .toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%);background:var(--walnut);color:var(--cream);padding:10px 18px;border-radius:100px;font-size:13px;font-weight:600;opacity:0;pointer-events:none;transition:opacity .25s ease, transform .25s ease;z-index:60;}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(-6px);}
+
+  .stream{opacity:0;transition:opacity .12s;}
+  .stream.active{opacity:1;}
+
+  /* share */
+  .share-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:6px;}
+  .share-item{display:flex;align-items:center;gap:10px;padding:13px 14px;border-radius:14px;border:1.5px solid var(--line);background:var(--cream-dark);cursor:pointer;font-size:13.5px;font-weight:700;font-family:'Baloo 2';transition:transform .12s ease;}
+  .share-item:hover{transform:translateY(-2px);}
+  .share-item .ic{width:26px;height:26px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:#fff;flex:0 0 auto;}
+  .share-preview{background:var(--cream-dark);border-radius:12px;padding:12px;font-size:12px;color:var(--walnut-soft);white-space:pre-wrap;max-height:130px;overflow:auto;margin-bottom:12px;line-height:1.55;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="brand">
+      <div class="mark">🥣</div>
+      <div>
+        <h1>오나오 랩</h1>
+        <div class="sub">스푼으로 재료를 더하고, 밀크를 조로록 부어서 나만의 오버나이트 오트밀을 만들어보세요</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button class="save-btn" id="shareBtn" style="background:var(--sage-dark);">🔗 공유하기</button>
+      <button class="save-btn" id="saveRecipeBtn">+ 이 레시피 저장하기</button>
+    </div>
+  </header>
+
+  <div class="rail" id="rail"></div>
+
+  <div class="grid">
+    <!-- bowl / ingredients -->
+    <div class="panel bowl-stage">
+      <input class="recipe-name-input" id="recipeNameInput" value="바나나 피넛버터 오트밀" />
+      <svg class="bowl" viewBox="0 0 200 190" xmlns="http://www.w3.org/2000/svg">
+        <ellipse cx="100" cy="178" rx="58" ry="9" fill="rgba(62,46,34,0.08)"></ellipse>
+        <!-- jar body (behind contents) -->
+        <path d="M62,34 L62,158 Q62,172 78,172 L122,172 Q138,172 138,158 L138,34 Z" fill="#FBF7EE"></path>
+        <clipPath id="jarClip"><path d="M65,34 L65,157 Q65,169 79,169 L121,169 Q135,169 135,157 L135,34 Z"/></clipPath>
+        <g clip-path="url(#jarClip)">
+          <g id="layerStack"></g>
+          <rect id="liquidFill" x="60" y="160" width="80" height="0" fill="#EFE0BE" opacity="0.8"></rect>
+          <g id="chunkLayer"></g>
+        </g>
+        <!-- glass outline + highlight -->
+        <path d="M62,34 L62,158 Q62,172 78,172 L122,172 Q138,172 138,158 L138,34 Z" fill="none" stroke="#C9B48D" stroke-width="3"></path>
+        <path d="M70,48 L70,140" stroke="rgba(255,255,255,0.75)" stroke-width="4" stroke-linecap="round"></path>
+        <!-- jar mouth rim -->
+        <rect x="56" y="24" width="88" height="12" rx="6" fill="#F3E7CC" stroke="#C9B48D" stroke-width="2.5"></rect>
+        <line id="pourStream" class="stream" x1="100" y1="0" x2="100" y2="50" stroke="#EFE0BE" stroke-width="7" stroke-linecap="round"></line>
+      </svg>
+
+      <div class="spoons-block">
+        <div id="ingList"></div>
+        <button class="add-ing-btn" id="addIngBtn">+ 재료 추가하기</button>
+      </div>
+
+      <div class="liquid-block">
+        <div class="liquid-title">🧃 밀크 붓기</div>
+        <div class="liquid-choices" id="liquidChoices"></div>
+        <div class="ml-row">
+          <input type="range" id="mlSlider" min="0" max="300" step="10" value="120" />
+          <div class="ml-val" id="mlVal">120 ml</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- nutrition -->
+    <div class="panel">
+      <div class="n-head">
+        <h2>영양 정보</h2>
+        <div style="text-align:right">
+          <div class="kcal-big" id="kcalBig">0</div>
+          <div class="kcal-label">kcal</div>
+        </div>
+      </div>
+      <div class="macro-bars" id="macroBars"></div>
+      <div class="breakdown" id="breakdown"></div>
+      <div class="note">* 일반적인 영양성분 데이터베이스 기준 추정치이며, 실제 제품·브랜드에 따라 다를 수 있어요.</div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ---------------- Data ---------------- */
+// per-spoon (15g) macro values, derived from ~100g reference data
+const G_PER_SPOON = 15;
+function per100(kcal,p,c,f,fb){ return {kcal,p,c,f,fb}; }
+const REF = { // per 100g
+  oats:      per100(389,16.9,66.3,6.9,10.6),
+  chia:      per100(486,16.5,42.1,30.7,34.4),
+  flax:      per100(534,18.3,28.9,42.2,27.3),
+  peanutbutter: per100(588,25,20,50,6),
+  almondbutter: per100(614,21,19,56,10),
+  honey:     per100(304,0.3,82.4,0,0.2),
+  maple:     per100(260,0,67,0.2,0),
+  cocoa:     per100(228,19.6,57.9,13.7,37),
+  banana:    per100(89,1.1,22.8,0.3,2.6),
+  blueberry: per100(57,0.7,14.5,0.3,2.4),
+  strawberry:per100(32,0.7,7.7,0.3,2),
+  mango:     per100(60,0.8,15,0.4,1.6),
+  coconutflake: per100(660,6.9,23.7,64.5,16.3),
+  yogurt:    per100(59,10.2,3.6,0.4,0),
+  protein:   per100(380,80,8,5,2),
+  cinnamon:  per100(247,4,80.6,1.2,53.1),
+  walnut:    per100(654,15.2,13.7,65.2,6.7),
+};
+const INGREDIENTS = [
+  {key:'oats', name:'압착 귀리', emoji:'🌾', color:'#D9C193'},
+  {key:'chia', name:'치아씨드', emoji:'🟤', color:'#8A7663'},
+  {key:'flax', name:'아마씨', emoji:'🌱', color:'#B5915C'},
+  {key:'peanutbutter', name:'땅콩버터', emoji:'🥜', color:'#C88F4E'},
+  {key:'almondbutter', name:'아몬드버터', emoji:'🌰', color:'#C9A06B'},
+  {key:'honey', name:'꿀', emoji:'🍯', color:'#E8B54A'},
+  {key:'maple', name:'메이플시럽', emoji:'🍁', color:'#B96F35'},
+  {key:'cocoa', name:'코코아파우더', emoji:'🍫', color:'#6B4A35'},
+  {key:'banana', name:'바나나', emoji:'🍌', color:'#F0D97C'},
+  {key:'blueberry', name:'블루베리', emoji:'🫐', color:'#7A6FA8'},
+  {key:'strawberry', name:'딸기', emoji:'🍓', color:'#E28A9B'},
+  {key:'mango', name:'망고', emoji:'🥭', color:'#F2B457'},
+  {key:'coconutflake', name:'코코넛플레이크', emoji:'🥥', color:'#F1E9DA'},
+  {key:'yogurt', name:'그릭요거트', emoji:'🥣', color:'#F4EEE2'},
+  {key:'protein', name:'프로틴파우더', emoji:'🥤', color:'#D8CBB8'},
+  {key:'cinnamon', name:'시나몬', emoji:'🍂', color:'#A9683C'},
+  {key:'walnut', name:'호두', emoji:'🟫', color:'#9B7B5B'},
+];
+const DEFAULT_LAYER_COLOR = '#D9C193';
+const ING_BY_KEY = {}; INGREDIENTS.forEach(i=>ING_BY_KEY[i.key]=i);
+
+// liquids: per 100ml
+const LIQUIDS = [
+  {key:'oatmilk', name:'오트밀크', emoji:'🌾', color:'#EFE0BE', ref:per100(47,1,7,1.5,0.8)},
+  {key:'almondmilk', name:'아몬드밀크', emoji:'🌰', color:'#F1E7D2', ref:per100(13,0.4,0.3,1.1,0.3)},
+  {key:'coconutmilk', name:'코코넛밀크', emoji:'🥥', color:'#F7F1E4', ref:per100(45,0.2,1,4.5,0)},
+  {key:'soymilk', name:'두유', emoji:'🫘', color:'#EDE6D0', ref:per100(33,3.3,1.8,1.8,0.6)},
+  {key:'milk', name:'우유', emoji:'🥛', color:'#F7F3E8', ref:per100(42,3.4,5,1,0)},
+];
+const LIQ_BY_KEY = {}; LIQUIDS.forEach(l=>LIQ_BY_KEY[l.key]=l);
+
+// emoji auto-suggest keyword map for custom ingredients
+const EMOJI_KEYWORDS = [
+  [['바나나'],'🍌'],[['딸기'],'🍓'],[['블루베리'],'🫐'],[['망고'],'🥭'],[['사과'],'🍎'],
+  [['키위'],'🥝'],[['체리'],'🍒'],[['포도'],'🍇'],[['복숭아'],'🍑'],
+  [['초코','코코아'],'🍫'],[['꿀'],'🍯'],[['메이플','시럽'],'🍁'],
+  [['땅콩'],'🥜'],[['아몬드'],'🌰'],[['호두','견과'],'🟫'],[['코코넛'],'🥥'],
+  [['치아'],'🟤'],[['아마씨'],'🌱'],[['시나몬','계피'],'🍂'],
+  [['요거트','요구르트'],'🥣'],[['프로틴','단백질'],'🥤'],[['귀리','오트'],'🌾'],
+  [['씨앗'],'🌰'],[['건포도'],'🍇'],
+];
+function suggestEmoji(name){
+  const n = (name||'').toLowerCase();
+  for(const [kws,em] of EMOJI_KEYWORDS){ if(kws.some(k=>n.includes(k))) return em; }
+  return '🥣';
+}
+
+/* ---------------- Default recipes ---------------- */
+const DEFAULT_RECIPES = [
+  {id:'r1', name:'바나나 피넛버터 오트밀', emoji:'🍌', ingredients:[{key:'oats',spoons:4},{key:'chia',spoons:1},{key:'peanutbutter',spoons:1},{key:'banana',spoons:2},{key:'honey',spoons:1}], liquid:'oatmilk', ml:150},
+  {id:'r2', name:'초코 아몬드 오트밀', emoji:'🍫', ingredients:[{key:'oats',spoons:4},{key:'cocoa',spoons:1},{key:'almondbutter',spoons:1},{key:'protein',spoons:1}], liquid:'almondmilk', ml:180},
+  {id:'r3', name:'베리 요거트 오트밀', emoji:'🫐', ingredients:[{key:'oats',spoons:4},{key:'yogurt',spoons:2},{key:'blueberry',spoons:2},{key:'strawberry',spoons:1},{key:'honey',spoons:1}], liquid:'oatmilk', ml:100},
+  {id:'r4', name:'망고 코코넛 오트밀', emoji:'🥭', ingredients:[{key:'oats',spoons:4},{key:'coconutflake',spoons:1},{key:'chia',spoons:1},{key:'mango',spoons:2}], liquid:'coconutmilk', ml:150},
+  {id:'r5', name:'시나몬 호두 오트밀', emoji:'🍂', ingredients:[{key:'oats',spoons:4},{key:'walnut',spoons:1},{key:'cinnamon',spoons:1},{key:'maple',spoons:1},{key:'flax',spoons:1}], liquid:'milk', ml:150},
+];
+
+/* ---------------- State ---------------- */
+let customRecipes = [];
+let currentRecipe = JSON.parse(JSON.stringify(DEFAULT_RECIPES[0]));
+let currentRecipeSourceId = 'r1';
+
+/* ---------------- Storage ---------------- */
+async function loadCustomRecipes(){
+  try{
+    const res = await window.storage.get('onao:custom-recipes');
+    if(res && res.value) customRecipes = JSON.parse(res.value);
+  }catch(e){ customRecipes = []; }
+  try{
+    const res2 = await window.storage.get('onao:custom-ingredients');
+    if(res2 && res2.value){
+      const defs = JSON.parse(res2.value);
+      defs.forEach(d=>{ ING_BY_KEY[d.key] = {key:d.key, name:d.name, emoji:d.emoji, color:d.color}; REF[d.key] = d.ref; });
+    }
+  }catch(e){}
+  renderRail();
+}
+async function saveCustomRecipes(){
+  try{ await window.storage.set('onao:custom-recipes', JSON.stringify(customRecipes)); }
+  catch(e){ console.error('저장 실패', e); }
+}
+async function saveCustomIngredient(def){
+  try{
+    let defs = [];
+    try{
+      const res = await window.storage.get('onao:custom-ingredients');
+      if(res && res.value) defs = JSON.parse(res.value);
+    }catch(e){}
+    defs.push(def);
+    await window.storage.set('onao:custom-ingredients', JSON.stringify(defs));
+  }catch(e){ console.error('재료 저장 실패', e); }
+}
+
+/* ---------------- AI ingredient analysis ---------------- */
+async function analyzeIngredient(name){
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-6",
+      max_tokens: 1000,
+      messages: [{
+        role: "user",
+        content: `식재료 "${name}"에 대해 다음 JSON만 답해. 마크다운, 설명, 백틱 없이 JSON 객체 하나만:\n{"emoji":"이 재료를 가장 잘 나타내는 이모지 1개","color":"이 재료의 실제 색을 나타내는 hex 색상코드","kcal":100g당 칼로리 숫자,"protein":100g당 단백질 g 숫자,"carb":100g당 탄수화물 g 숫자,"fat":100g당 지방 g 숫자,"fiber":100g당 식이섬유 g 숫자}\n일반적인 영양성분 데이터베이스 기준 대표값을 사용해.`
+      }]
+    })
+  });
+  const data = await res.json();
+  const text = data.content.filter(i=>i.type==='text').map(i=>i.text).join('');
+  const clean = text.replace(/```json|```/g,'').trim();
+  const obj = JSON.parse(clean);
+  return {
+    emoji: obj.emoji || suggestEmoji(name),
+    color: /^#[0-9a-fA-F]{6}$/.test(obj.color||'') ? obj.color : DEFAULT_LAYER_COLOR,
+    ref: per100(+obj.kcal||0, +obj.protein||0, +obj.carb||0, +obj.fat||0, +obj.fiber||0)
+  };
+}
+
+/* ---------------- Render: rail ---------------- */
+function renderRail(){
+  const rail = document.getElementById('rail');
+  rail.innerHTML = '';
+  [...DEFAULT_RECIPES, ...customRecipes].forEach(r=>{
+    const card = document.createElement('div');
+    card.className = 'rcard' + (r.id===currentRecipeSourceId ? ' active':'');
+    card.innerHTML = `<div class="em">${r.emoji}</div><div class="nm">${r.name}</div><div class="tag">${r.ingredients.length}가지 재료</div>`;
+    card.onclick = ()=>{ currentRecipe = JSON.parse(JSON.stringify(r)); currentRecipeSourceId = r.id; renderAll(); };
+    rail.appendChild(card);
+  });
+  const addCard = document.createElement('div');
+  addCard.className = 'rcard new';
+  addCard.innerHTML = `<div class="em">➕</div><div class="nm">새 레시피</div>`;
+  addCard.onclick = ()=>{
+    currentRecipe = {id:'custom-'+Date.now(), name:'나만의 오트밀', emoji:'🥣', ingredients:[{key:'oats',spoons:4}], liquid:'oatmilk', ml:150};
+    currentRecipeSourceId = currentRecipe.id;
+    renderAll();
+  };
+  rail.appendChild(addCard);
+}
+
+/* ---------------- Render: bowl + ingredients ---------------- */
+function renderIngredients(){
+  const list = document.getElementById('ingList');
+  list.innerHTML = '';
+  currentRecipe.ingredients.forEach((row, idx)=>{
+    const meta = ING_BY_KEY[row.key] || {name:row.key, emoji:'🥣'};
+    const div = document.createElement('div');
+    div.className = 'ing-row';
+    const spoonsShown = Math.min(row.spoons, 6);
+    let spoonsHtml = '';
+    for(let i=0;i<6;i++){ spoonsHtml += `<span class="spoon-icon ${i<spoonsShown?'filled':''}">🥄</span>`; }
+    div.innerHTML = `
+      <div class="ing-info" data-key="${row.key}" data-idx="${idx}" style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;">
+        <div class="ing-em">${meta.emoji}</div>
+        <div class="ing-name">${meta.name}</div>
+      </div>
+      <div class="ing-spoons">${spoonsHtml}</div>
+      <div class="stepper">
+        <button data-act="minus" data-idx="${idx}">–</button>
+        <div class="val">${row.spoons}</div>
+        <button data-act="plus" data-idx="${idx}">+</button>
+      </div>
+      <button class="ing-remove" data-act="remove" data-idx="${idx}">✕</button>
+    `;
+    list.appendChild(div);
+  });
+  list.querySelectorAll('.ing-info').forEach(el=>{
+    el.onclick = ()=>{
+      const idx = parseInt(el.dataset.idx);
+      openIngredientInfoModal(currentRecipe.ingredients[idx]);
+    };
+  });
+  list.querySelectorAll('button').forEach(btn=>{
+    btn.onclick = ()=>{
+      const idx = parseInt(btn.dataset.idx);
+      const act = btn.dataset.act;
+      if(act==='plus') currentRecipe.ingredients[idx].spoons = Math.min(20, currentRecipe.ingredients[idx].spoons+1);
+      if(act==='minus') currentRecipe.ingredients[idx].spoons = Math.max(1, currentRecipe.ingredients[idx].spoons-1);
+      if(act==='remove') currentRecipe.ingredients.splice(idx,1);
+      renderAll();
+    };
+  });
+}
+
+function openIngredientInfoModal(row){
+  const meta = ING_BY_KEY[row.key] || {name:row.key, emoji:'🥣'};
+  const ref = REF[row.key];
+  if(!ref){ showToast('이 재료의 영양 정보가 없어요'); return; }
+  const grams = row.spoons * G_PER_SPOON;
+  const perSpoon = f => (f * G_PER_SPOON / 100);
+  const inRecipe = f => (f * grams / 100);
+  const fmt = v => v >= 10 ? Math.round(v) : v.toFixed(1);
+  const nutrients = [
+    ['단백질', ref.p], ['탄수화물', ref.c], ['지방', ref.f], ['식이섬유', ref.fb]
+  ];
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay';
+  overlay.innerHTML = `
+    <div class="modal">
+      <button class="close-x">✕</button>
+      <h3>${meta.emoji} ${meta.name}</h3>
+      <div class="info-kcal-hero">
+        <span class="num">${Math.round(perSpoon(ref.kcal))}</span>
+        <span class="per">kcal / 1스푼 (${G_PER_SPOON}g)</span>
+      </div>
+      <table class="info-table">
+        <tr><th>영양성분</th><th>1스푼</th><th>레시피 속 ${row.spoons}스푼</th></tr>
+        <tr><td>칼로리</td><td>${Math.round(perSpoon(ref.kcal))} kcal</td><td>${Math.round(inRecipe(ref.kcal))} kcal</td></tr>
+        ${nutrients.map(([n,v])=>`<tr><td>${n}</td><td>${fmt(perSpoon(v))} g</td><td>${fmt(inRecipe(v))} g</td></tr>`).join('')}
+      </table>
+      <div class="note">* 100g당 기준: ${Math.round(ref.kcal)} kcal · 단백질 ${fmt(ref.p)}g · 탄수 ${fmt(ref.c)}g · 지방 ${fmt(ref.f)}g · 식이섬유 ${fmt(ref.fb)}g</div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.querySelector('.close-x').onclick = ()=>document.body.removeChild(overlay);
+  overlay.onclick = (e)=>{ if(e.target===overlay) document.body.removeChild(overlay); };
+}
+
+function renderLiquidChoices(){
+  const box = document.getElementById('liquidChoices');
+  box.innerHTML = '';
+  LIQUIDS.forEach(l=>{
+    const chip = document.createElement('div');
+    chip.className = 'lchip' + (currentRecipe.liquid===l.key ? ' active':'');
+    chip.innerHTML = `<span>${l.emoji}</span><span>${l.name}</span>`;
+    chip.onclick = ()=>{ currentRecipe.liquid = l.key; triggerPour(); renderAll(); };
+    box.appendChild(chip);
+  });
+}
+
+function triggerPour(){
+  const stream = document.getElementById('pourStream');
+  stream.classList.add('active');
+  setTimeout(()=>stream.classList.remove('active'), 500);
+}
+
+function renderBowl(){
+  const SVG = 'http://www.w3.org/2000/svg';
+  const JAR_L = 65, JAR_R = 135;      // jar interior walls
+  const JAR_BOTTOM = 168;             // jar floor
+  const JAR_MAX_H = 128;              // max fill height (solids + liquid)
+  const JAR_W = JAR_R - JAR_L;
+  const liquid = LIQ_BY_KEY[currentRecipe.liquid] || LIQUIDS[0];
+  const stream = document.getElementById('pourStream');
+  stream.setAttribute('stroke', liquid.color);
+
+  // --- 1) solid ingredients stack up as layers, in list order (first = bottom) ---
+  const stack = document.getElementById('layerStack');
+  stack.innerHTML = '';
+  const totalSpoons = currentRecipe.ingredients.reduce((s,r)=>s+r.spoons,0);
+  const mlUnits = currentRecipe.ml / 30;           // 30ml ≈ 1 spoon of visual height
+  const totalUnits = Math.max(totalSpoons + mlUnits, 1);
+  const unitH = Math.min(JAR_MAX_H / totalUnits, 14); // squish when jar gets full
+
+  let yCursor = JAR_BOTTOM;
+  let seed = 11;
+  currentRecipe.ingredients.forEach((row)=>{
+    const meta = ING_BY_KEY[row.key] || {emoji:'🥣'};
+    const color = (meta.color) || DEFAULT_LAYER_COLOR;
+    const layerH = Math.max(row.spoons * unitH, 5);
+    const yTop = yCursor - layerH;
+
+    // layer band with a gently wavy top edge
+    seed += 29;
+    const w = 1.5 + (seed % 2);
+    const path = document.createElementNS(SVG,'path');
+    path.setAttribute('d',
+      `M${JAR_L},${yCursor} L${JAR_L},${yTop+w} Q${JAR_L+JAR_W*0.3},${yTop-w} 100,${yTop} Q${JAR_R-JAR_W*0.3},${yTop+w} ${JAR_R},${yTop-w*0.5} L${JAR_R},${yCursor} Z`);
+    path.setAttribute('fill', color);
+    stack.appendChild(path);
+
+    // thin divider shadow on top of each layer so similar colors stay distinct
+    const divider = document.createElementNS(SVG,'path');
+    divider.setAttribute('d', `M${JAR_L},${yTop+w} Q${JAR_L+JAR_W*0.3},${yTop-w} 100,${yTop} Q${JAR_R-JAR_W*0.3},${yTop+w} ${JAR_R},${yTop-w*0.5}`);
+    divider.setAttribute('fill','none');
+    divider.setAttribute('stroke','rgba(62,46,34,0.22)');
+    divider.setAttribute('stroke-width','1.2');
+    stack.appendChild(divider);
+
+    // speckle texture inside the layer
+    const speckles = Math.min(row.spoons * 3, 14);
+    for(let i=0;i<speckles;i++){
+      seed += 53;
+      const cx = JAR_L + 5 + ((seed*37) % (JAR_W - 10));
+      const cy = yTop + 3 + ((seed*19) % Math.max(layerH-5,1));
+      const dot = document.createElementNS(SVG,'circle');
+      dot.setAttribute('cx',cx); dot.setAttribute('cy',cy);
+      dot.setAttribute('r', 0.9 + ((seed%3)*0.4));
+      dot.setAttribute('fill','rgba(62,46,34,0.20)');
+      stack.appendChild(dot);
+    }
+    yCursor = yTop;
+  });
+  const solidsTop = yCursor;
+
+  // --- 2) liquid pools on top of the solid pile ---
+  const fill = document.getElementById('liquidFill');
+  fill.setAttribute('fill', liquid.color);
+  const remaining = Math.max(solidsTop - (JAR_BOTTOM - JAR_MAX_H), 0);
+  const lh = Math.max(Math.min(mlUnits * unitH, remaining), 0);
+  fill.setAttribute('y', solidsTop - lh);
+  fill.setAttribute('height', lh);
+
+  // --- 3) toppings removed: emoji jittered on every change ---
+  document.getElementById('chunkLayer').innerHTML = '';
+}
+
+/* ---------------- Nutrition ---------------- */
+function computeNutrition(){
+  let kcal=0,p=0,c=0,f=0,fb=0;
+  const rows = [];
+  currentRecipe.ingredients.forEach(row=>{
+    const ref = REF[row.key];
+    const meta = ING_BY_KEY[row.key];
+    if(!ref || !meta) return;
+    const grams = row.spoons * G_PER_SPOON;
+    const factor = grams/100;
+    const k = ref.kcal*factor;
+    kcal += k; p += ref.p*factor; c += ref.c*factor; f += ref.f*factor; fb += ref.fb*factor;
+    rows.push({name:meta.name, emoji:meta.emoji, kcal:k});
+  });
+  const liquid = LIQ_BY_KEY[currentRecipe.liquid];
+  if(liquid){
+    const factor = currentRecipe.ml/100;
+    const k = liquid.ref.kcal*factor;
+    kcal += k; p += liquid.ref.p*factor; c += liquid.ref.c*factor; f += liquid.ref.f*factor; fb += liquid.ref.fb*factor;
+    rows.push({name:liquid.name, emoji:liquid.emoji, kcal:k});
+  }
+  return {kcal,p,c,f,fb,rows};
+}
+
+function renderNutrition(){
+  const n = computeNutrition();
+  document.getElementById('kcalBig').textContent = Math.round(n.kcal);
+  const macros = [
+    {label:'단백질', val:n.p, color:'var(--sage)'},
+    {label:'탄수화물', val:n.c, color:'var(--honey)'},
+    {label:'지방', val:n.f, color:'var(--berry)'},
+    {label:'식이섬유', val:n.fb, color:'var(--walnut-soft)'},
+  ];
+  const maxVal = Math.max(...macros.map(m=>m.val), 1);
+  const bars = document.getElementById('macroBars');
+  bars.innerHTML = '';
+  macros.forEach(m=>{
+    const row = document.createElement('div');
+    row.className = 'mbar-row';
+    const pct = Math.min(100, (m.val/maxVal)*100);
+    row.innerHTML = `<div class="mbar-label">${m.label}</div><div class="mbar-track"><div class="mbar-fill" style="width:${pct}%;background:${m.color}"></div></div><div class="mbar-val">${m.val.toFixed(1)}g</div>`;
+    bars.appendChild(row);
+  });
+  const bd = document.getElementById('breakdown');
+  bd.innerHTML = '';
+  n.rows.filter(r=>r.kcal>0.4).forEach(r=>{
+    const row = document.createElement('div');
+    row.className = 'b-row';
+    row.innerHTML = `<span>${r.emoji} ${r.name}</span><span>${Math.round(r.kcal)} kcal</span>`;
+    bd.appendChild(row);
+  });
+}
+
+/* ---------------- Full render ---------------- */
+function renderAll(){
+  document.getElementById('recipeNameInput').value = currentRecipe.name;
+  document.getElementById('mlSlider').value = currentRecipe.ml;
+  document.getElementById('mlVal').textContent = currentRecipe.ml + ' ml';
+  renderIngredients();
+  renderLiquidChoices();
+  renderBowl();
+  renderNutrition();
+  renderRail();
+}
+
+/* ---------------- Toast ---------------- */
+function showToast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 1800);
+}
+
+/* ---------------- Modals ---------------- */
+function openAddIngredientModal(){
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay';
+  overlay.innerHTML = `
+    <div class="modal">
+      <button class="close-x">✕</button>
+      <h3>재료 추가하기</h3>
+      <div class="field">
+        <label>기존 재료에서 고르기</label>
+        <div class="pick-list" id="pickList"></div>
+      </div>
+      <div style="border-top:1px solid var(--line);margin:14px 0;padding-top:14px;">
+        <div class="field">
+          <label>또는 새 재료 직접 추가</label>
+          <input id="newIngName" placeholder="예: 냉동 라즈베리" />
+          <div class="em-preview"><span style="font-size:12px;color:var(--walnut-soft)">이름만 입력하면 AI가 이모지·색·칼로리·영양성분을 자동으로 채워줘요</span></div>
+        </div>
+        <div id="analyzeResult" style="display:none;background:var(--cream-dark);border-radius:12px;padding:12px;margin-bottom:12px;font-size:12.5px;"></div>
+        <div class="modal-actions">
+          <button class="btn-secondary" id="cancelNew">취소</button>
+          <button class="btn-primary" id="confirmNew">🔍 분석하고 추가하기</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const pickList = overlay.querySelector('#pickList');
+  INGREDIENTS.forEach(ing=>{
+    const item = document.createElement('div');
+    item.className = 'pick-item';
+    item.innerHTML = `<span>${ing.emoji}</span><span>${ing.name}</span>`;
+    item.onclick = ()=>{
+      const existing = currentRecipe.ingredients.find(r=>r.key===ing.key);
+      if(existing){ existing.spoons += 1; } else { currentRecipe.ingredients.push({key:ing.key, spoons:1}); }
+      document.body.removeChild(overlay);
+      renderAll();
+    };
+    pickList.appendChild(item);
+  });
+
+  const nameInput = overlay.querySelector('#newIngName');
+  const confirmBtn = overlay.querySelector('#confirmNew');
+  const resultBox = overlay.querySelector('#analyzeResult');
+
+  overlay.querySelector('.close-x').onclick = ()=>document.body.removeChild(overlay);
+  overlay.querySelector('#cancelNew').onclick = ()=>document.body.removeChild(overlay);
+  confirmBtn.onclick = async ()=>{
+    const name = nameInput.value.trim();
+    if(!name){ showToast('재료 이름을 입력해주세요'); return; }
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = '분석 중... ⏳';
+    resultBox.style.display = 'block';
+    resultBox.textContent = `"${name}" 영양성분을 찾고 있어요...`;
+    let info;
+    try{
+      info = await analyzeIngredient(name);
+    }catch(e){
+      info = { emoji: suggestEmoji(name), color: DEFAULT_LAYER_COLOR, ref: per100(60,1.5,10,1.5,1.5) };
+      showToast('자동 분석에 실패해서 평균값으로 추가했어요');
+    }
+    const key = 'custom_' + name.replace(/\s+/g,'_') + '_' + Date.now();
+    const def = {key, name, emoji: info.emoji, color: info.color, ref: info.ref};
+    ING_BY_KEY[key] = {key, name, emoji: info.emoji, color: info.color};
+    REF[key] = info.ref;
+    currentRecipe.ingredients.push({key, spoons:1});
+    await saveCustomIngredient(def);
+    const perSpoonKcal = Math.round(info.ref.kcal * G_PER_SPOON / 100);
+    document.body.removeChild(overlay);
+    renderAll();
+    showToast(`${info.emoji} ${name} 추가! 스푼당 약 ${perSpoonKcal} kcal`);
+  };
+  overlay.onclick = (e)=>{ if(e.target===overlay) document.body.removeChild(overlay); };
+}
+
+function openSaveRecipeModal(){
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay';
+  overlay.innerHTML = `
+    <div class="modal">
+      <button class="close-x">✕</button>
+      <h3>레시피 저장하기</h3>
+      <div class="field">
+        <label>레시피 이름</label>
+        <input id="saveName" value="${currentRecipe.name}" />
+      </div>
+      <div class="field">
+        <label>대표 이모지</label>
+        <input id="saveEmoji" value="${currentRecipe.emoji||'🥣'}" maxlength="2" />
+      </div>
+      <div class="modal-actions">
+        <button class="btn-secondary" id="saveCancel">취소</button>
+        <button class="btn-primary" id="saveConfirm">저장하기</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.querySelector('.close-x').onclick = ()=>document.body.removeChild(overlay);
+  overlay.querySelector('#saveCancel').onclick = ()=>document.body.removeChild(overlay);
+  overlay.querySelector('#saveConfirm').onclick = async ()=>{
+    const name = overlay.querySelector('#saveName').value.trim() || '나만의 오트밀';
+    const emoji = overlay.querySelector('#saveEmoji').value.trim() || '🥣';
+    const newRecipe = {
+      id: 'custom-'+Date.now(),
+      name, emoji,
+      ingredients: JSON.parse(JSON.stringify(currentRecipe.ingredients)),
+      liquid: currentRecipe.liquid,
+      ml: currentRecipe.ml
+    };
+    customRecipes.push(newRecipe);
+    await saveCustomRecipes();
+    currentRecipe = JSON.parse(JSON.stringify(newRecipe));
+    currentRecipeSourceId = newRecipe.id;
+    document.body.removeChild(overlay);
+    renderAll();
+    showToast('레시피가 저장됐어요 🎉');
+  };
+  overlay.onclick = (e)=>{ if(e.target===overlay) document.body.removeChild(overlay); };
+}
+
+/* ---------------- Events ---------------- */
+document.getElementById('recipeNameInput').addEventListener('input', (e)=>{ currentRecipe.name = e.target.value; });
+document.getElementById('mlSlider').addEventListener('input', (e)=>{
+  currentRecipe.ml = parseInt(e.target.value);
+  document.getElementById('mlVal').textContent = currentRecipe.ml + ' ml';
+  triggerPour();
+  renderBowl();
+  renderNutrition();
+});
+document.getElementById('addIngBtn').onclick = openAddIngredientModal;
+document.getElementById('saveRecipeBtn').onclick = openSaveRecipeModal;
+document.getElementById('shareBtn').onclick = openShareModal;
+
+/* ---------------- Share ---------------- */
+function buildShareText(){
+  const n = computeNutrition();
+  const liquid = LIQ_BY_KEY[currentRecipe.liquid];
+  const ings = currentRecipe.ingredients.map(r=>{
+    const m = ING_BY_KEY[r.key] || {name:r.key, emoji:'🥣'};
+    return `${m.emoji} ${m.name} ${r.spoons}스푼`;
+  }).join('\n');
+  return `🥣 ${currentRecipe.name}\n\n${ings}\n${liquid ? `${liquid.emoji} ${liquid.name} ${currentRecipe.ml}ml` : ''}\n\n🔥 총 ${Math.round(n.kcal)} kcal · 단백질 ${n.p.toFixed(1)}g\n\n#오나오 #오버나이트오트밀 #오나오랩`;
+}
+
+async function copyText(text){
+  try{ await navigator.clipboard.writeText(text); return true; }
+  catch(e){
+    const ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta);
+    ta.select();
+    try{ document.execCommand('copy'); return true; }
+    catch(e2){ return false; }
+    finally{ document.body.removeChild(ta); }
+  }
+}
+
+function openShareModal(){
+  const text = buildShareText();
+  const url = window.location.href;
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay';
+  overlay.innerHTML = `
+    <div class="modal">
+      <button class="close-x">✕</button>
+      <h3>레시피 공유하기</h3>
+      <div class="share-preview">${text.replace(/</g,'&lt;')}</div>
+      <div class="share-grid">
+        <div class="share-item" data-share="link"><span class="ic" style="background:var(--walnut);">🔗</span>링크 복사</div>
+        <div class="share-item" data-share="kakao"><span class="ic" style="background:#FEE500;color:#3C1E1E;">K</span>카카오톡</div>
+        <div class="share-item" data-share="x"><span class="ic" style="background:#000;">𝕏</span>X (트위터)</div>
+        <div class="share-item" data-share="threads"><span class="ic" style="background:#000;">@</span>스레드</div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  const close = ()=>document.body.removeChild(overlay);
+  overlay.querySelector('.close-x').onclick = close;
+  overlay.onclick = (e)=>{ if(e.target===overlay) close(); };
+
+  overlay.querySelectorAll('.share-item').forEach(item=>{
+    item.onclick = async ()=>{
+      const kind = item.dataset.share;
+      if(kind === 'link'){
+        const ok = await copyText(url + '\n\n' + text);
+        showToast(ok ? '링크와 레시피가 복사됐어요 📋' : '복사에 실패했어요');
+        close();
+      }
+      else if(kind === 'x'){
+        window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`, '_blank');
+        close();
+      }
+      else if(kind === 'threads'){
+        window.open(`https://www.threads.net/intent/post?text=${encodeURIComponent(text + '\n' + url)}`, '_blank');
+        close();
+      }
+      else if(kind === 'kakao'){
+        // 모바일: OS 공유 시트에서 카카오톡 선택 / PC: 복사 후 붙여넣기
+        if(navigator.share){
+          try{ await navigator.share({title: currentRecipe.name, text, url}); close(); return; }
+          catch(e){ if(e.name === 'AbortError'){ close(); return; } }
+        }
+        const ok = await copyText(text + '\n' + url);
+        showToast(ok ? '복사 완료! 카카오톡에 붙여넣어 주세요 💬' : '복사에 실패했어요');
+        close();
+      }
+    };
+  });
+}
+
+/* ---------------- Init ---------------- */
+loadCustomRecipes().then(renderAll);
+</script>
+</body>
+</html>
