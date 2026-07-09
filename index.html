@@ -6,6 +6,8 @@
 <title>오나오 랩</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<script src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.4/kakao.min.js" integrity="sha384-DKYJZ8NLiK8MN4/C5P2dtSmLQ4KwPaoqAfyA/DfmEc1VDxu4yyC7wy6K1Hs90nka" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <style>
   :root{
     --cream:#F5ECD9;
@@ -140,6 +142,18 @@
   .toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%);background:var(--walnut);color:var(--cream);padding:10px 18px;border-radius:100px;font-size:13px;font-weight:600;opacity:0;pointer-events:none;transition:opacity .25s ease, transform .25s ease;z-index:60;}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(-6px);}
 
+  /* auth */
+  .login-btn{background:var(--card);color:var(--walnut);border:1.5px solid var(--line);border-radius:100px;padding:10px 18px;font-family:'Baloo 2';font-weight:700;font-size:13.5px;cursor:pointer;}
+  .login-btn:hover{border-color:var(--honey);}
+  .user-chip{display:flex;align-items:center;gap:8px;background:var(--card);border:1.5px solid var(--line);border-radius:100px;padding:6px 14px 6px 6px;cursor:pointer;font-size:13px;font-weight:600;}
+  .user-chip .avatar{width:26px;height:26px;border-radius:50%;background:var(--honey);color:#fff;display:flex;align-items:center;justify-content:center;font-family:'Baloo 2';font-size:13px;flex:0 0 auto;overflow:hidden;}
+  .user-chip .avatar img{width:100%;height:100%;object-fit:cover;}
+  .login-choice{display:flex;flex-direction:column;gap:10px;margin-top:6px;}
+  .login-choice button{display:flex;align-items:center;justify-content:center;gap:10px;padding:12px;border-radius:14px;border:1.5px solid var(--line);background:var(--cream-dark);font-family:'Baloo 2';font-weight:700;font-size:14px;cursor:pointer;}
+  .login-choice button:hover{transform:translateY(-1px);}
+  .login-choice .g-ic{width:18px;height:18px;background:#fff;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:#4285F4;}
+  .login-choice .k-ic{width:18px;height:18px;background:#FEE500;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:#3C1E1E;}
+
   .stream{opacity:0;transition:opacity .12s;}
   .stream.active{opacity:1;}
 
@@ -162,7 +176,8 @@
         <div class="sub">스푼으로 재료를 더하고, 밀크를 조로록 부어서 나만의 오버나이트 오트밀을 만들어보세요</div>
       </div>
     </div>
-    <div style="display:flex;gap:8px;">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <div id="authArea"></div>
       <button class="save-btn" id="shareBtn" style="background:var(--sage-dark);">🔗 공유하기</button>
       <button class="save-btn" id="saveRecipeBtn">+ 이 레시피 저장하기</button>
     </div>
@@ -308,6 +323,8 @@ const DEFAULT_RECIPES = [
 
 /* ---------------- State ---------------- */
 let customRecipes = [];
+let cloudRecipes = [];
+let currentUser = null;
 let currentRecipe = JSON.parse(JSON.stringify(DEFAULT_RECIPES[0]));
 let currentRecipeSourceId = 'r1';
 const NAME_INDEX = {}; // normalized name -> ingredient key, so we never re-analyze the same ingredient twice
@@ -404,10 +421,11 @@ async function analyzeIngredient(name){
 function renderRail(){
   const rail = document.getElementById('rail');
   rail.innerHTML = '';
-  [...DEFAULT_RECIPES, ...customRecipes].forEach(r=>{
+  [...DEFAULT_RECIPES, ...customRecipes, ...cloudRecipes].forEach(r=>{
     const card = document.createElement('div');
     card.className = 'rcard' + (r.id===currentRecipeSourceId ? ' active':'');
-    card.innerHTML = `<div class="em">${r.emoji}</div><div class="nm">${r.name}</div><div class="tag">${r.ingredients.length}가지 재료</div>`;
+    const cloudBadge = r._cloud ? '<span style="float:right;font-size:11px;">☁️</span>' : '';
+    card.innerHTML = `<div class="em">${r.emoji}${cloudBadge}</div><div class="nm">${r.name}</div><div class="tag">${r.ingredients.length}가지 재료</div>`;
     card.onclick = ()=>{ currentRecipe = JSON.parse(JSON.stringify(r)); currentRecipeSourceId = r.id; renderAll(); };
     rail.appendChild(card);
   });
@@ -829,6 +847,9 @@ function openSaveRecipeModal(){
         <label>대표 이모지</label>
         <input id="saveEmoji" value="${currentRecipe.emoji||'🥣'}" maxlength="2" />
       </div>
+      <div class="note" style="margin-top:-4px;margin-bottom:14px;">
+        ${currentUser ? `☁️ ${currentUser.email || '내 계정'}에 저장돼요 — 어느 기기에서든 로그인하면 불러올 수 있어요` : '💾 이 브라우저에만 저장돼요. 로그인하면 계정에 저장돼서 다른 기기에서도 불러올 수 있어요'}
+      </div>
       <div class="modal-actions">
         <button class="btn-secondary" id="saveCancel">취소</button>
         <button class="btn-primary" id="saveConfirm">저장하기</button>
@@ -841,13 +862,35 @@ function openSaveRecipeModal(){
   overlay.querySelector('#saveConfirm').onclick = async ()=>{
     const name = overlay.querySelector('#saveName').value.trim() || '나만의 오트밀';
     const emoji = overlay.querySelector('#saveEmoji').value.trim() || '🥣';
-    const newRecipe = {
-      id: 'custom-'+Date.now(),
-      name, emoji,
-      ingredients: JSON.parse(JSON.stringify(currentRecipe.ingredients)),
-      liquid: currentRecipe.liquid,
-      ml: currentRecipe.ml
-    };
+    const ingredients = JSON.parse(JSON.stringify(currentRecipe.ingredients));
+
+    if(currentUser && sb){
+      // logged in -> save to Supabase (synced to account)
+      const customDefs = [];
+      ingredients.forEach(row=>{
+        const isBuiltIn = INGREDIENTS.some(i=>i.key===row.key);
+        if(!isBuiltIn && ING_BY_KEY[row.key] && REF[row.key]){
+          const m = ING_BY_KEY[row.key];
+          customDefs.push({key:row.key, name:m.name, emoji:m.emoji, color:m.color, ref:REF[row.key]});
+        }
+      });
+      const { data, error } = await sb.from('recipes').insert({
+        user_id: currentUser.id, name, emoji, ingredients,
+        liquid: currentRecipe.liquid, ml: currentRecipe.ml, custom_defs: customDefs
+      }).select().single();
+      if(error){ showToast('저장 실패: ' + error.message); return; }
+      const newRecipe = { id:'cloud-'+data.id, _cloud:true, _dbId:data.id, name, emoji, ingredients, liquid: currentRecipe.liquid, ml: currentRecipe.ml, customDefs };
+      cloudRecipes.push(newRecipe);
+      currentRecipe = JSON.parse(JSON.stringify(newRecipe));
+      currentRecipeSourceId = newRecipe.id;
+      document.body.removeChild(overlay);
+      renderAll();
+      showToast('☁️ 계정에 저장됐어요!');
+      return;
+    }
+
+    // not logged in -> local browser storage (previous behavior)
+    const newRecipe = { id: 'custom-'+Date.now(), name, emoji, ingredients, liquid: currentRecipe.liquid, ml: currentRecipe.ml };
     customRecipes.push(newRecipe);
     await saveCustomRecipes();
     currentRecipe = JSON.parse(JSON.stringify(newRecipe));
@@ -883,6 +926,101 @@ function buildShareText(){
   return `🥣 ${currentRecipe.name}\n\n${ings}\n${liquid ? `${liquid.emoji} ${liquid.name} ${currentRecipe.ml}ml` : ''}\n\n🔥 총 ${Math.round(n.kcal)} kcal · 단백질 ${n.p.toFixed(1)}g\n\n#오나오 #오버나이트오트밀 #오나오랩`;
 }
 
+/* ---------------- Shareable link (recipe travels inside the URL) ---------------- */
+/* base64url helpers (UTF-8 safe) — far more compact than percent-encoding for Korean text */
+function utf8ToBase64Url(str){
+  const bytes = new TextEncoder().encode(str);
+  let binary = '';
+  bytes.forEach(b => binary += String.fromCharCode(b));
+  return btoa(binary).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+function base64UrlToUtf8(b64url){
+  let b64 = b64url.replace(/-/g,'+').replace(/_/g,'/');
+  while(b64.length % 4) b64 += '=';
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for(let i=0;i<binary.length;i++) bytes[i] = binary.charCodeAt(i);
+  return new TextDecoder().decode(bytes);
+}
+function safeShareBase(){
+  // window.location.origin is "null" inside Claude's sandboxed preview iframe (srcdoc) —
+  // guard against that so we never emit a garbage "nullsrcdoc" URL. On the real deployed
+  // site (Vercel etc.) this always resolves to the normal https://your-domain/ URL.
+  const origin = window.location.origin;
+  if(origin && origin !== 'null' && window.location.protocol !== 'about:'){
+    return origin + window.location.pathname;
+  }
+  return window.location.href.split(/[?#]/)[0];
+}
+
+function buildShareUrl(){
+  // bundle any custom (AI-analyzed) ingredients this recipe uses, so the person
+  // opening the link sees correct emoji/color/nutrition even if they've never added them
+  const customDefs = [];
+  currentRecipe.ingredients.forEach(row=>{
+    const isBuiltIn = INGREDIENTS.some(i=>i.key===row.key);
+    if(!isBuiltIn && ING_BY_KEY[row.key] && REF[row.key]){
+      const m = ING_BY_KEY[row.key];
+      customDefs.push([row.key, m.name, m.emoji, m.color || '', REF[row.key]]);
+    }
+  });
+  // compact payload: short keys + [key,spoons] tuples instead of named objects
+  const payload = {
+    n: currentRecipe.name,
+    e: currentRecipe.emoji || '🥣',
+    i: currentRecipe.ingredients.map(r => [r.key, r.spoons]),
+    l: currentRecipe.liquid,
+    m: currentRecipe.ml,
+    c: customDefs
+  };
+  const encoded = utf8ToBase64Url(JSON.stringify(payload));
+  return safeShareBase() + '?r=' + encoded;
+}
+
+function loadRecipeFromUrl(){
+  try{
+    const params = new URLSearchParams(window.location.search);
+    const raw = params.get('r');
+    if(!raw) return false;
+
+    let payload;
+    try{ payload = JSON.parse(base64UrlToUtf8(raw)); }
+    catch(e){ payload = JSON.parse(decodeURIComponent(raw)); } // backward-compat with old links
+
+    // support both compact (n/e/i/l/m/c) and legacy (name/emoji/ingredients/...) formats
+    const name = payload.n ?? payload.name;
+    const emoji = payload.e ?? payload.emoji;
+    const liquid = payload.l ?? payload.liquid;
+    const ml = payload.m ?? payload.ml;
+    const ingredients = (payload.i ?? payload.ingredients ?? []).map(row=>
+      Array.isArray(row) ? {key: row[0], spoons: row[1]} : row
+    );
+    const customDefs = (payload.c ?? payload.customDefs ?? []).map(d=>
+      Array.isArray(d) ? {key:d[0], name:d[1], emoji:d[2], color:d[3], ref:d[4]} : d
+    );
+    if(!ingredients.length) return false;
+
+    customDefs.forEach(d=>{
+      ING_BY_KEY[d.key] = {key:d.key, name:d.name, emoji:d.emoji, color:d.color};
+      REF[d.key] = d.ref;
+      indexIngredient(d.key, d.name);
+    });
+    currentRecipe = {
+      id: 'shared-' + Date.now(),
+      name: name || '공유받은 오트밀',
+      emoji: emoji || '🥣',
+      ingredients,
+      liquid: liquid || 'oatmilk',
+      ml: typeof ml === 'number' ? ml : 150
+    };
+    currentRecipeSourceId = currentRecipe.id;
+    // clean the URL so further edits don't carry stale share data on refresh
+    history.replaceState(null, '', window.location.pathname);
+    showToast('공유받은 레시피를 불러왔어요 🥣 마음에 들면 저장해보세요!');
+    return true;
+  }catch(e){ console.warn('공유 링크 파싱 실패', e); return false; }
+}
+
 async function copyText(text){
   try{ await navigator.clipboard.writeText(text); return true; }
   catch(e){
@@ -897,7 +1035,7 @@ async function copyText(text){
 
 function openShareModal(){
   const text = buildShareText();
-  const url = window.location.href;
+  const url = buildShareUrl();
   const overlay = document.createElement('div');
   overlay.className = 'overlay';
   overlay.innerHTML = `
@@ -935,7 +1073,20 @@ function openShareModal(){
         close();
       }
       else if(kind === 'kakao'){
-        // 모바일: OS 공유 시트에서 카카오톡 선택 / PC: 복사 후 붙여넣기
+        // 1순위: 카카오 JS SDK로 진짜 카카오톡 공유 시트 열기 (도메인이 카카오 콘솔에 등록돼 있어야 함)
+        if(window.Kakao && window.Kakao.isInitialized() && window.Kakao.Share){
+          try{
+            window.Kakao.Share.sendDefault({
+              objectType: 'text',
+              text: text,
+              link: { mobileWebUrl: url, webUrl: url },
+              buttons: [{ title: '레시피 보러가기', link: { mobileWebUrl: url, webUrl: url } }]
+            });
+            close();
+            return;
+          }catch(e){ console.warn('Kakao 공유 실패, 대체 방식으로 전환:', e); }
+        }
+        // 2순위: 모바일 OS 공유 시트에서 카카오톡 선택 / 3순위: 복사 후 붙여넣기
         if(navigator.share){
           try{ await navigator.share({title: currentRecipe.name, text, url}); close(); return; }
           catch(e){ if(e.name === 'AbortError'){ close(); return; } }
@@ -948,8 +1099,130 @@ function openShareModal(){
   });
 }
 
+/* ---------------- Auth (Supabase: Google + Kakao login) ---------------- */
+const SUPABASE_URL = 'https://jnrcgwjvkmvellxlczob.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_t80cKxNh9_X4pxvTjI_gNQ_SB1VYW-0';
+let sb = null;
+try{
+  if(window.supabase && window.supabase.createClient){
+    sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  }
+}catch(e){ console.warn('Supabase 초기화 실패:', e); }
+
+function renderAuthArea(){
+  const area = document.getElementById('authArea');
+  if(!area) return;
+  if(!sb){ area.innerHTML = ''; return; }
+  if(currentUser){
+    const meta = currentUser.user_metadata || {};
+    const avatarUrl = meta.avatar_url || meta.picture || '';
+    const label = meta.full_name || meta.name || currentUser.email || '내 계정';
+    const initial = (label[0] || '🥣').toUpperCase();
+    area.innerHTML = `
+      <div class="user-chip" id="userChip">
+        <div class="avatar">${avatarUrl ? `<img src="${avatarUrl}" alt="">` : initial}</div>
+        <span>${label}</span>
+      </div>`;
+    document.getElementById('userChip').onclick = openAccountModal;
+  }else{
+    area.innerHTML = `<button class="login-btn" id="loginBtn">👤 로그인</button>`;
+    document.getElementById('loginBtn').onclick = openLoginModal;
+  }
+}
+
+function openLoginModal(){
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay';
+  overlay.innerHTML = `
+    <div class="modal">
+      <button class="close-x">✕</button>
+      <h3>로그인하고 레시피 동기화하기</h3>
+      <div class="note" style="margin-top:0;">로그인하면 저장한 레시피를 다른 기기에서도 그대로 불러올 수 있어요.</div>
+      <div class="login-choice">
+        <button id="loginGoogle"><span class="g-ic">G</span> Google로 계속하기</button>
+        <button id="loginKakao"><span class="k-ic">K</span> 카카오로 계속하기</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.querySelector('.close-x').onclick = ()=>document.body.removeChild(overlay);
+  overlay.onclick = (e)=>{ if(e.target===overlay) document.body.removeChild(overlay); };
+
+  const startLogin = async (provider)=>{
+    if(!sb){ showToast('로그인 준비가 안 됐어요. 잠시 후 다시 시도해주세요'); return; }
+    const { error } = await sb.auth.signInWithOAuth({
+      provider,
+      options: { redirectTo: window.location.origin + window.location.pathname }
+    });
+    if(error) showToast(`로그인 실패: ${error.message}`);
+  };
+  overlay.querySelector('#loginGoogle').onclick = ()=>startLogin('google');
+  overlay.querySelector('#loginKakao').onclick = ()=>startLogin('kakao');
+}
+
+function openAccountModal(){
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay';
+  overlay.innerHTML = `
+    <div class="modal">
+      <button class="close-x">✕</button>
+      <h3>내 계정</h3>
+      <div class="note" style="margin-top:0;">${currentUser.email || ''} · 저장된 레시피 ${cloudRecipes.length}개</div>
+      <div class="modal-actions">
+        <button class="btn-secondary" id="logoutBtn">로그아웃</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.querySelector('.close-x').onclick = ()=>document.body.removeChild(overlay);
+  overlay.onclick = (e)=>{ if(e.target===overlay) document.body.removeChild(overlay); };
+  overlay.querySelector('#logoutBtn').onclick = async ()=>{
+    await sb.auth.signOut();
+    document.body.removeChild(overlay);
+  };
+}
+
+async function loadCloudRecipes(){
+  if(!sb || !currentUser){ cloudRecipes = []; return; }
+  const { data, error } = await sb.from('recipes').select('*').order('updated_at', {ascending:false});
+  if(error){ console.warn('클라우드 레시피 로드 실패:', error.message); return; }
+  cloudRecipes = (data || []).map(r=>{
+    (r.custom_defs || []).forEach(d=>{
+      ING_BY_KEY[d.key] = {key:d.key, name:d.name, emoji:d.emoji, color:d.color};
+      REF[d.key] = d.ref;
+      indexIngredient(d.key, d.name);
+    });
+    return { id:'cloud-'+r.id, _cloud:true, _dbId:r.id, name:r.name, emoji:r.emoji, ingredients:r.ingredients, liquid:r.liquid, ml:r.ml, customDefs:r.custom_defs };
+  });
+  renderRail();
+}
+
+if(sb){
+  sb.auth.onAuthStateChange(async (event, session)=>{
+    currentUser = session ? session.user : null;
+    renderAuthArea();
+    if(currentUser){ await loadCloudRecipes(); renderRail(); }
+    else { cloudRecipes = []; renderRail(); }
+  });
+}
+
 /* ---------------- Init ---------------- */
-loadCustomRecipes().then(renderAll);
+try{
+  if(window.Kakao && !window.Kakao.isInitialized()){
+    window.Kakao.init('067bd42185ad4d6c723a2d6aad3b8f96');
+  }
+}catch(e){ console.warn('Kakao SDK 초기화 실패(허용 도메인 미등록 등):', e); }
+
+loadCustomRecipes().then(async ()=>{
+  if(sb){
+    const { data:{ session } } = await sb.auth.getSession();
+    currentUser = session ? session.user : null;
+    renderAuthArea();
+    if(currentUser) await loadCloudRecipes();
+  }
+  loadRecipeFromUrl();
+  renderAll();
+});
 </script>
 </body>
 </html>
