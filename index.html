@@ -184,6 +184,7 @@
   .share-item:hover{transform:translateY(-2px);}
   .share-item .ic{width:26px;height:26px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:#fff;flex:0 0 auto;}
   .share-preview{background:var(--cream-dark);border-radius:12px;padding:12px;font-size:12px;color:var(--walnut-soft);white-space:pre-wrap;max-height:130px;overflow:auto;margin-bottom:12px;line-height:1.55;}
+  .share-link-row{background:#FBEBCB;border:1px solid var(--honey);border-radius:10px;padding:9px 12px;font-size:12px;color:var(--walnut);margin-bottom:12px;word-break:break-all;font-family:'JetBrains Mono';}
 </style>
 </head>
 <body>
@@ -1036,6 +1037,7 @@ function openSaveRecipeModal(){
     overlay.onclick = (e)=>{ if(e.target===overlay) close(); };
     const startLogin = async (provider)=>{
       if(!sb){ showToast('로그인 준비가 안 됐어요. 잠시 후 다시 시도해주세요'); return; }
+      stashCurrentRecipe();
       const { error } = await sb.auth.signInWithOAuth({
         provider,
         options: { redirectTo: window.location.origin + window.location.pathname }
@@ -1158,7 +1160,7 @@ function safeShareBase(){
   return window.location.href.split(/[?#]/)[0];
 }
 
-function buildShareUrl(){
+function buildSharePayload(){
   // bundle any custom (AI-analyzed) ingredients this recipe uses, so the person
   // opening the link sees correct emoji/color/nutrition even if they've never added them
   const customDefs = [];
@@ -1170,7 +1172,7 @@ function buildShareUrl(){
     }
   });
   // compact payload: short keys + [key,spoons] tuples instead of named objects
-  const payload = {
+  return {
     n: currentRecipe.name,
     e: currentRecipe.emoji || '🥣',
     i: currentRecipe.ingredients.map(r => [r.key, r.spoons]),
@@ -1178,51 +1180,126 @@ function buildShareUrl(){
     m: currentRecipe.ml,
     c: customDefs
   };
-  const encoded = utf8ToBase64Url(JSON.stringify(payload));
+}
+
+// 긴 링크 (데이터를 URL에 직접 담음) — 폴백용
+function buildShareUrl(){
+  const encoded = utf8ToBase64Url(JSON.stringify(buildSharePayload()));
   return safeShareBase() + '?r=' + encoded;
 }
 
-function loadRecipeFromUrl(){
+// 6자리 짧은 코드 생성
+function genShareCode(){
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+  let s = '';
+  for(let i=0;i<6;i++) s += chars[Math.floor(Math.random()*chars.length)];
+  return s;
+}
+
+// Supabase에 저장하고 짧은 링크(?s=코드)를 반환. 실패 시 긴 링크로 폴백.
+async function createShortLink(){
+  if(!sb) return buildShareUrl();
+  const payload = buildSharePayload();
+  // 코드 충돌 시 몇 번 재시도
+  for(let attempt=0; attempt<4; attempt++){
+    const code = genShareCode();
+    const { error } = await sb.from('shared_recipes').insert({ share_code: code, payload });
+    if(!error){ return safeShareBase() + '?s=' + code; }
+    // unique 충돌(23505)이면 다른 코드로 재시도, 그 외 오류는 폴백
+    if(error.code !== '23505'){ console.warn('짧은 링크 생성 실패, 긴 링크로 대체:', error.message); break; }
+  }
+  return buildShareUrl();
+}
+
+
+/* 로그인 리다이렉트 전에 현재 편집 중인 레시피를 임시 저장했다가, 돌아오면 복원 */
+function stashCurrentRecipe(){
   try{
-    const params = new URLSearchParams(window.location.search);
-    const raw = params.get('r');
+    sessionStorage.setItem('onao:pending-recipe', JSON.stringify({
+      recipe: currentRecipe,
+      sourceId: currentRecipeSourceId,
+      // 현재 레시피가 쓰는 커스텀(AI 분석) 재료 정의도 같이 저장
+      customDefs: currentRecipe.ingredients
+        .filter(row => !INGREDIENTS.some(i=>i.key===row.key) && ING_BY_KEY[row.key] && REF[row.key])
+        .map(row => { const m = ING_BY_KEY[row.key]; return {key:row.key, name:m.name, emoji:m.emoji, color:m.color, ref:REF[row.key]}; })
+    }));
+  }catch(e){}
+}
+function restoreStashedRecipe(){
+  try{
+    const raw = sessionStorage.getItem('onao:pending-recipe');
     if(!raw) return false;
-
-    let payload;
-    try{ payload = JSON.parse(base64UrlToUtf8(raw)); }
-    catch(e){ payload = JSON.parse(decodeURIComponent(raw)); } // backward-compat with old links
-
-    // support both compact (n/e/i/l/m/c) and legacy (name/emoji/ingredients/...) formats
-    const name = payload.n ?? payload.name;
-    const emoji = payload.e ?? payload.emoji;
-    const liquid = payload.l ?? payload.liquid;
-    const ml = payload.m ?? payload.ml;
-    const ingredients = (payload.i ?? payload.ingredients ?? []).map(row=>
-      Array.isArray(row) ? {key: row[0], spoons: row[1]} : row
-    );
-    const customDefs = (payload.c ?? payload.customDefs ?? []).map(d=>
-      Array.isArray(d) ? {key:d[0], name:d[1], emoji:d[2], color:d[3], ref:d[4]} : d
-    );
-    if(!ingredients.length) return false;
-
-    customDefs.forEach(d=>{
+    sessionStorage.removeItem('onao:pending-recipe');
+    const stash = JSON.parse(raw);
+    if(!stash || !stash.recipe) return false;
+    (stash.customDefs || []).forEach(d=>{
       ING_BY_KEY[d.key] = {key:d.key, name:d.name, emoji:d.emoji, color:d.color};
       REF[d.key] = d.ref;
       indexIngredient(d.key, d.name);
     });
-    currentRecipe = {
-      id: 'shared-' + Date.now(),
-      name: name || '공유받은 오트밀',
-      emoji: emoji || '🥣',
-      ingredients,
-      liquid: liquid || 'oatmilk',
-      ml: typeof ml === 'number' ? ml : 150
-    };
-    currentRecipeSourceId = currentRecipe.id;
-    // clean the URL so further edits don't carry stale share data on refresh
-    history.replaceState(null, '', window.location.pathname);
-    showToast('공유받은 레시피를 불러왔어요 🥣 마음에 들면 저장해보세요!');
+    currentRecipe = stash.recipe;
+    currentRecipeSourceId = stash.sourceId || currentRecipe.id;
     return true;
+  }catch(e){ return false; }
+}
+
+function applySharedPayload(payload){
+  // support both compact (n/e/i/l/m/c) and legacy (name/emoji/ingredients/...) formats
+  const name = payload.n ?? payload.name;
+  const emoji = payload.e ?? payload.emoji;
+  const liquid = payload.l ?? payload.liquid;
+  const ml = payload.m ?? payload.ml;
+  const ingredients = (payload.i ?? payload.ingredients ?? []).map(row=>
+    Array.isArray(row) ? {key: row[0], spoons: row[1]} : row
+  );
+  const customDefs = (payload.c ?? payload.customDefs ?? []).map(d=>
+    Array.isArray(d) ? {key:d[0], name:d[1], emoji:d[2], color:d[3], ref:d[4]} : d
+  );
+  if(!ingredients.length) return false;
+
+  customDefs.forEach(d=>{
+    ING_BY_KEY[d.key] = {key:d.key, name:d.name, emoji:d.emoji, color:d.color};
+    REF[d.key] = d.ref;
+    indexIngredient(d.key, d.name);
+  });
+  currentRecipe = {
+    id: 'shared-' + Date.now(),
+    name: name || '공유받은 오트밀',
+    emoji: emoji || '🥣',
+    ingredients,
+    liquid: liquid || 'oatmilk',
+    ml: typeof ml === 'number' ? ml : 150
+  };
+  currentRecipeSourceId = currentRecipe.id;
+  history.replaceState(null, '', window.location.pathname);
+  showToast('공유받은 레시피를 불러왔어요 🥣 마음에 들면 저장해보세요!');
+  return true;
+}
+
+async function loadRecipeFromUrl(){
+  try{
+    const params = new URLSearchParams(window.location.search);
+
+    // 1) 짧은 코드 (?s=코드) -> Supabase에서 레시피 조회
+    const code = params.get('s');
+    if(code && sb){
+      const { data, error } = await sb.from('shared_recipes').select('payload').eq('share_code', code).single();
+      if(!error && data && data.payload){
+        return applySharedPayload(data.payload);
+      }
+      console.warn('공유 코드 조회 실패:', error && error.message);
+      showToast('공유 링크를 찾을 수 없어요 😢');
+      history.replaceState(null, '', window.location.pathname);
+      return false;
+    }
+
+    // 2) 긴 링크 (?r=인코딩) -> URL에서 직접 디코드 (폴백/구버전 호환)
+    const raw = params.get('r');
+    if(!raw) return false;
+    let payload;
+    try{ payload = JSON.parse(base64UrlToUtf8(raw)); }
+    catch(e){ payload = JSON.parse(decodeURIComponent(raw)); }
+    return applySharedPayload(payload);
   }catch(e){ console.warn('공유 링크 파싱 실패', e); return false; }
 }
 
@@ -1240,7 +1317,7 @@ async function copyText(text){
 
 function openShareModal(){
   const text = buildShareText();
-  const url = buildShareUrl();
+  let url = buildShareUrl(); // 폴백: 짧은 링크 생성 전엔 긴 링크
   const overlay = document.createElement('div');
   overlay.className = 'overlay';
   overlay.innerHTML = `
@@ -1248,6 +1325,9 @@ function openShareModal(){
       <button class="close-x">✕</button>
       <h3>레시피 공유하기</h3>
       <div class="share-preview">${text.replace(/</g,'&lt;')}</div>
+      <div class="share-link-row" id="shareLinkRow">
+        <span id="shareLinkText">🔗 짧은 링크 만드는 중...</span>
+      </div>
       <div class="share-grid">
         <div class="share-item" data-share="link"><span class="ic" style="background:var(--walnut);">🔗</span>링크 복사</div>
         <div class="share-item" data-share="kakao"><span class="ic" style="background:#FEE500;color:#3C1E1E;">K</span>카카오톡</div>
@@ -1261,12 +1341,21 @@ function openShareModal(){
   overlay.querySelector('.close-x').onclick = close;
   overlay.onclick = (e)=>{ if(e.target===overlay) close(); };
 
+  // 모달 열자마자 짧은 링크 생성 시도 (실패하면 긴 링크 유지)
+  const linkText = overlay.querySelector('#shareLinkText');
+  createShortLink().then(shortUrl=>{
+    url = shortUrl;
+    if(linkText) linkText.textContent = shortUrl;
+  }).catch(()=>{
+    if(linkText) linkText.textContent = url;
+  });
+
   overlay.querySelectorAll('.share-item').forEach(item=>{
     item.onclick = async ()=>{
       const kind = item.dataset.share;
       if(kind === 'link'){
-        const ok = await copyText(url + '\n\n' + text);
-        showToast(ok ? '링크와 레시피가 복사됐어요 📋' : '복사에 실패했어요');
+        const ok = await copyText(url);
+        showToast(ok ? '링크가 복사됐어요 📋' : '복사에 실패했어요');
         close();
       }
       else if(kind === 'x'){
@@ -1355,6 +1444,7 @@ function openLoginModal(){
 
   const startLogin = async (provider)=>{
     if(!sb){ showToast('로그인 준비가 안 됐어요. 잠시 후 다시 시도해주세요'); return; }
+    stashCurrentRecipe();
     const { error } = await sb.auth.signInWithOAuth({
       provider,
       options: { redirectTo: window.location.origin + window.location.pathname }
@@ -1433,7 +1523,11 @@ loadCustomRecipes().then(async ()=>{
     if(currentUser) await loadCloudRecipes();
   }
   await loadFavorites();
-  loadRecipeFromUrl();
+  // 공유 링크로 들어온 경우가 최우선, 그다음 로그인 직전에 보던 레시피 복원
+  const loadedFromUrl = await loadRecipeFromUrl();
+  if(!loadedFromUrl){
+    if(restoreStashedRecipe()) showToast('보고 있던 레시피를 그대로 불러왔어요 ✨');
+  }
   renderAll();
 }).catch(e=>{
   console.warn('초기 로딩 중 오류:', e);
