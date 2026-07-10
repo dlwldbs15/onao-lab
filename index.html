@@ -218,6 +218,7 @@
       <div class="spoons-block">
         <div id="ingList"></div>
         <button class="add-ing-btn" id="addIngBtn">+ 재료 추가하기</button>
+        <div class="note" style="margin-top:8px;">🥄 1스푼 = 15g 기준으로 계산돼요 (0.5스푼 단위 조절 가능)</div>
       </div>
 
       <div class="liquid-block">
@@ -907,6 +908,38 @@ function openAddIngredientModal(){
 }
 
 function openSaveRecipeModal(){
+  // 로그인 안 돼 있으면 저장 대신 로그인 유도
+  if(!currentUser){
+    const overlay = document.createElement('div');
+    overlay.className = 'overlay';
+    overlay.innerHTML = `
+      <div class="modal">
+        <button class="close-x">✕</button>
+        <h3>로그인하고 레시피 저장하기</h3>
+        <div class="note" style="margin-top:0;margin-bottom:16px;">레시피를 저장하려면 로그인이 필요해요. 로그인하면 저장한 레시피를 어느 기기에서든 다시 불러올 수 있어요.</div>
+        <div class="login-choice">
+          <button id="saveLoginGoogle"><span class="g-ic">G</span> Google로 계속하기</button>
+          <button id="saveLoginKakao"><span class="k-ic">K</span> 카카오로 계속하기</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    const close = ()=>document.body.removeChild(overlay);
+    overlay.querySelector('.close-x').onclick = close;
+    overlay.onclick = (e)=>{ if(e.target===overlay) close(); };
+    const startLogin = async (provider)=>{
+      if(!sb){ showToast('로그인 준비가 안 됐어요. 잠시 후 다시 시도해주세요'); return; }
+      const { error } = await sb.auth.signInWithOAuth({
+        provider,
+        options: { redirectTo: window.location.origin + window.location.pathname }
+      });
+      if(error) showToast(`로그인 실패: ${error.message}`);
+    };
+    overlay.querySelector('#saveLoginGoogle').onclick = ()=>startLogin('google');
+    overlay.querySelector('#saveLoginKakao').onclick = ()=>startLogin('kakao');
+    return;
+  }
+
   const overlay = document.createElement('div');
   overlay.className = 'overlay';
   overlay.innerHTML = `
@@ -922,7 +955,7 @@ function openSaveRecipeModal(){
         <input id="saveEmoji" value="${currentRecipe.emoji||'🥣'}" maxlength="2" />
       </div>
       <div class="note" style="margin-top:-4px;margin-bottom:14px;">
-        ${currentUser ? `☁️ ${currentUser.email || '내 계정'}에 저장돼요 — 어느 기기에서든 로그인하면 불러올 수 있어요` : '💾 이 브라우저에만 저장돼요. 로그인하면 계정에 저장돼서 다른 기기에서도 불러올 수 있어요'}
+        ☁️ ${currentUser.email || '내 계정'}에 저장돼요 — 어느 기기에서든 로그인하면 불러올 수 있어요
       </div>
       <div class="modal-actions">
         <button class="btn-secondary" id="saveCancel">취소</button>
@@ -962,16 +995,6 @@ function openSaveRecipeModal(){
       showToast('☁️ 계정에 저장됐어요!');
       return;
     }
-
-    // not logged in -> local browser storage (previous behavior)
-    const newRecipe = { id: 'custom-'+Date.now(), name, emoji, ingredients, liquid: currentRecipe.liquid, ml: currentRecipe.ml };
-    customRecipes.push(newRecipe);
-    await saveCustomRecipes();
-    currentRecipe = JSON.parse(JSON.stringify(newRecipe));
-    currentRecipeSourceId = newRecipe.id;
-    document.body.removeChild(overlay);
-    renderAll();
-    showToast('레시피가 저장됐어요 🎉');
   };
   overlay.onclick = (e)=>{ if(e.target===overlay) document.body.removeChild(overlay); };
 }
