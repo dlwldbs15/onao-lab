@@ -132,6 +132,14 @@
   .grade-comment .row{display:flex;gap:7px;align-items:flex-start;margin:3px 0;}
   .grade-comment .row .ic{flex:0 0 auto;}
 
+  /* skeleton loading */
+  @keyframes shimmer { 0%{background-position:-400px 0;} 100%{background-position:400px 0;} }
+  .skel{background:linear-gradient(90deg, var(--cream-dark) 25%, #F1E9D6 50%, var(--cream-dark) 75%);background-size:800px 100%;animation:shimmer 1.3s infinite linear;border-radius:8px;}
+  .skel-card{flex:0 0 auto;width:150px;height:96px;border-radius:18px;}
+  .skel-line{height:12px;margin:8px 0;}
+  .skel-jar{width:220px;height:210px;border-radius:20px;margin:0 auto;}
+  .app-hidden{display:none !important;}
+
   /* modal */
   .overlay{position:fixed;inset:0;background:rgba(62,46,34,0.45);display:flex;align-items:center;justify-content:center;padding:20px;z-index:50;}
   .modal{background:var(--card);border-radius:20px;padding:24px;width:100%;max-width:420px;max-height:86vh;overflow:auto;}
@@ -196,6 +204,34 @@
     </div>
   </header>
 
+  <!-- skeleton (shown until app finishes loading session + recipes) -->
+  <div id="skeleton">
+    <div class="rail" style="pointer-events:none;">
+      <div class="skel skel-card"></div>
+      <div class="skel skel-card"></div>
+      <div class="skel skel-card"></div>
+      <div class="skel skel-card"></div>
+    </div>
+    <div class="grid">
+      <div class="panel">
+        <div class="skel skel-line" style="width:60%;height:16px;"></div>
+        <div class="skel skel-jar" style="margin-top:14px;"></div>
+        <div class="skel skel-line" style="width:100%;margin-top:18px;"></div>
+        <div class="skel skel-line" style="width:90%;"></div>
+        <div class="skel skel-line" style="width:95%;"></div>
+      </div>
+      <div class="panel">
+        <div class="skel skel-line" style="width:40%;height:16px;"></div>
+        <div class="skel skel-line" style="width:100%;margin-top:16px;"></div>
+        <div class="skel skel-line" style="width:100%;"></div>
+        <div class="skel skel-line" style="width:100%;"></div>
+        <div class="skel skel-line" style="width:100%;"></div>
+        <div class="skel skel-line" style="width:70%;height:44px;margin-top:16px;"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="appContent" class="app-hidden">
   <div style="display:flex;align-items:center;gap:8px;">
     <button class="fav-filter-btn" id="favFilterBtn">⭐ 즐겨찾기만</button>
   </div>
@@ -254,6 +290,7 @@
       <div class="note">* 일반적인 영양성분 데이터베이스 기준 추정치이며, 실제 제품·브랜드에 따라 다를 수 있어요.</div>
     </div>
   </div>
+  </div><!-- /appContent -->
 </div>
 
 <div class="toast" id="toast"></div>
@@ -1381,6 +1418,13 @@ try{
   }
 }catch(e){ console.warn('Kakao SDK 초기화 실패(허용 도메인 미등록 등):', e); }
 
+function revealApp(){
+  const skel = document.getElementById('skeleton');
+  const app = document.getElementById('appContent');
+  if(skel) skel.style.display = 'none';
+  if(app) app.classList.remove('app-hidden');
+}
+
 loadCustomRecipes().then(async ()=>{
   if(sb){
     const { data:{ session } } = await sb.auth.getSession();
@@ -1391,6 +1435,11 @@ loadCustomRecipes().then(async ()=>{
   await loadFavorites();
   loadRecipeFromUrl();
   renderAll();
+}).catch(e=>{
+  console.warn('초기 로딩 중 오류:', e);
+  renderAll();
+}).finally(()=>{
+  revealApp();
 });
 </script>
 </body>
