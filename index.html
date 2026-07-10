@@ -123,6 +123,14 @@
   .b-row{display:flex;justify-content:space-between;font-size:12.5px;padding:5px 0;color:var(--walnut-soft);}
   .b-row span:first-child{color:var(--walnut);font-weight:600;}
   .note{font-size:11px;color:var(--walnut-soft);opacity:0.8;margin-top:14px;line-height:1.5;}
+  .grade-box{margin-top:16px;border-top:1px solid var(--line);padding-top:16px;}
+  .grade-head{display:flex;align-items:center;gap:12px;margin-bottom:10px;}
+  .grade-badge{width:52px;height:52px;border-radius:16px;display:flex;align-items:center;justify-content:center;font-family:'Baloo 2';font-weight:800;font-size:26px;color:#fff;flex:0 0 auto;}
+  .grade-title{font-family:'Baloo 2';font-weight:700;font-size:15px;}
+  .grade-sub{font-size:11.5px;color:var(--walnut-soft);margin-top:1px;}
+  .grade-comment{font-size:12.5px;line-height:1.6;color:var(--walnut);background:var(--cream-dark);border-radius:12px;padding:11px 13px;}
+  .grade-comment .row{display:flex;gap:7px;align-items:flex-start;margin:3px 0;}
+  .grade-comment .row .ic{flex:0 0 auto;}
 
   /* modal */
   .overlay{position:fixed;inset:0;background:rgba(62,46,34,0.45);display:flex;align-items:center;justify-content:center;padding:20px;z-index:50;}
@@ -242,6 +250,7 @@
       </div>
       <div class="macro-bars" id="macroBars"></div>
       <div class="breakdown" id="breakdown"></div>
+      <div class="grade-box" id="gradeBox"></div>
       <div class="note">* 일반적인 영양성분 데이터베이스 기준 추정치이며, 실제 제품·브랜드에 따라 다를 수 있어요.</div>
     </div>
   </div>
@@ -789,6 +798,67 @@ function renderNutrition(){
     row.innerHTML = `<span>${r.emoji} ${r.name}</span><span>${Math.round(r.kcal)} kcal</span>`;
     bd.appendChild(row);
   });
+  renderGrade(n);
+}
+
+/* ---------------- Meal balance grade (균형 잡힌 한 끼 기준) ---------------- */
+function renderGrade(n){
+  const box = document.getElementById('gradeBox');
+  if(!box) return;
+
+  // 재료가 거의 없으면 평가 생략
+  if(n.kcal < 30){
+    box.innerHTML = '';
+    return;
+  }
+
+  const kcal = n.kcal, p = n.p, c = n.c, f = n.f, fb = n.fb;
+  const comments = [];
+  let score = 0;
+
+  // 1) 단백질 (한 끼 15g 이상이면 이상적) — 최대 30점
+  if(p >= 20){ score += 30; comments.push(['💪', `단백질 ${p.toFixed(0)}g으로 든든해요`]); }
+  else if(p >= 12){ score += 22; comments.push(['💪', `단백질 ${p.toFixed(0)}g, 무난해요`]); }
+  else if(p >= 7){ score += 12; comments.push(['🥚', `단백질이 ${p.toFixed(0)}g로 조금 부족해요. 그릭요거트나 프로틴을 더해보세요`]); }
+  else{ comments.push(['🥚', `단백질이 ${p.toFixed(0)}g로 적어요. 요거트·견과·프로틴파우더를 추가하면 좋아요`]); }
+
+  // 2) 식이섬유 (한 끼 7g 이상 권장) — 최대 25점
+  if(fb >= 8){ score += 25; comments.push(['🌾', `식이섬유 ${fb.toFixed(0)}g으로 포만감이 좋아요`]); }
+  else if(fb >= 5){ score += 18; comments.push(['🌾', `식이섬유 ${fb.toFixed(0)}g, 적당해요`]); }
+  else{ score += 8; comments.push(['🫐', `식이섬유가 ${fb.toFixed(0)}g로 아쉬워요. 치아씨드나 베리류를 더해보세요`]); }
+
+  // 3) 칼로리 (한 끼 300~500kcal이 균형점) — 최대 25점
+  if(kcal >= 300 && kcal <= 500){ score += 25; comments.push(['🔥', `${Math.round(kcal)}kcal로 한 끼 식사에 딱 좋아요`]); }
+  else if(kcal < 300){ score += 15; comments.push(['🔥', `${Math.round(kcal)}kcal로 가벼운 편이에요. 간식이라면 충분해요`]); }
+  else if(kcal <= 650){ score += 15; comments.push(['🔥', `${Math.round(kcal)}kcal로 조금 든든한 한 끼예요`]); }
+  else{ score += 6; comments.push(['⚠️', `${Math.round(kcal)}kcal로 다소 높아요. 견과·버터류 양을 줄여보세요`]); }
+
+  // 4) 지방 비율 (전체 칼로리의 35% 이하 권장) — 최대 20점
+  const fatPct = kcal > 0 ? (f * 9 / kcal) * 100 : 0;
+  if(fatPct <= 35){ score += 20; comments.push(['🥑', `지방 비율(${fatPct.toFixed(0)}%)이 적절해요`]); }
+  else if(fatPct <= 45){ score += 12; comments.push(['🥑', `지방 비율(${fatPct.toFixed(0)}%)이 약간 높아요`]); }
+  else{ score += 4; comments.push(['🥜', `지방 비율(${fatPct.toFixed(0)}%)이 높아요. 땅콩·아몬드버터 양을 조절해보세요`]); }
+
+  // 등급 산정
+  let grade, gradeColor, gradeTitle;
+  if(score >= 85){ grade = 'A'; gradeColor = 'var(--sage-dark)'; gradeTitle = '아주 균형 잡힌 한 끼'; }
+  else if(score >= 70){ grade = 'B'; gradeColor = 'var(--sage)'; gradeTitle = '균형 잡힌 좋은 조합'; }
+  else if(score >= 50){ grade = 'C'; gradeColor = 'var(--honey)'; gradeTitle = '무난하지만 보완하면 좋아요'; }
+  else if(score >= 30){ grade = 'D'; gradeColor = 'var(--honey-dark)'; gradeTitle = '영양 균형이 아쉬워요'; }
+  else{ grade = 'E'; gradeColor = 'var(--berry)'; gradeTitle = '균형을 더 맞춰보세요'; }
+
+  box.innerHTML = `
+    <div class="grade-head">
+      <div class="grade-badge" style="background:${gradeColor}">${grade}</div>
+      <div>
+        <div class="grade-title">${gradeTitle}</div>
+        <div class="grade-sub">균형 잡힌 한 끼 기준 · ${score}점 / 100점</div>
+      </div>
+    </div>
+    <div class="grade-comment">
+      ${comments.map(([ic,txt])=>`<div class="row"><span class="ic">${ic}</span><span>${txt}</span></div>`).join('')}
+    </div>
+  `;
 }
 
 /* ---------------- Full render ---------------- */
