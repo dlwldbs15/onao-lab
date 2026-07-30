@@ -1,82 +1,188 @@
-# 🥣 오나오 랩
+-- 오나오 랩: 레시피 저장 테이블 + 보안 정책(RLS) + 전역 재료 캐시
+-- Supabase 대시보드 > SQL Editor 에서 그대로 실행하세요.
+-- 이 스크립트는 몇 번을 다시 실행해도 안전합니다 (이미 있는 건 건너뜁니다).
 
-스푼으로 재료를 더하고 밀크를 조로록 부어서 나만의 오버나이트 오트밀(오나오) 레시피를 만드는 인터랙티브 웹 앱. 재료를 넣을 때마다 유리병 속 층이 실시간으로 쌓이고, 칼로리·단백질·탄수화물·지방·식이섬유가 자동 계산돼요.
+create table if not exists public.recipes (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users(id) on delete cascade not null default auth.uid(),
+  name text not null,
+  emoji text default '🥣',
+  ingredients jsonb not null,      -- [{key, spoons}, ...]
+  liquid text not null,
+  ml integer not null default 150,
+  custom_defs jsonb default '[]',  -- AI로 분석한 재료 정의 (이 레시피가 쓰는 것만)
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
 
-## 주요 기능
+-- 사용자별 데이터 격리: 로그인한 본인 레시피만 보이고, 본인만 수정 가능
+alter table public.recipes enable row level security;
 
-**레시피 빌더**
-- 기본 레시피 5종 + 나만의 레시피 무제한 추가
-- 스푼 단위 조절 (0.5 단위 반스푼까지 가능), 드래그 앤 드롭으로 재료 순서 변경 (재료 순서 = 병 속 층 쌓이는 순서)
-- 오트밀크·아몬드밀크·코코넛밀크·두유·우유 중 선택해서 ml 단위로 붓기
-- 재료를 클릭하면 스푼당/레시피 전체 영양 정보 상세 카드 확인 가능
+drop policy if exists "본인 레시피 조회" on public.recipes;
+create policy "본인 레시피 조회" on public.recipes
+  for select using (auth.uid() = user_id);
 
-**AI 재료 분석**
-- 재료 이름만 입력하면 Claude가 이모지·색상·칼로리·영양성분을 자동으로 채워줌 (`api/analyze.js` 서버리스 함수 경유)
-- **전역 공유 캐시**: 누군가 한 번 분석한 재료는 Supabase `ingredients` 테이블에 저장되고, 이후 다른 사용자가 비슷한 이름을 입력하면(오타·띄어쓰기 차이 포함, pg_trgm 유사도 검색) AI를 다시 부르지 않고 그 값을 재사용함
-- 같은 브라우저 안에서도 이름별로 한 번만 분석하고 영구 캐싱
+drop policy if exists "본인 레시피 생성" on public.recipes;
+create policy "본인 레시피 생성" on public.recipes
+  for insert with check (auth.uid() = user_id);
 
-**즐겨찾기**
-- 레시피 카드 우측 상단 ⭐ 버튼으로 즐겨찾기 토글, 즐겨찾기한 레시피는 목록 맨 앞으로 자동 정렬
-- "⭐ 즐겨찾기만" 필터로 즐겨찾기한 것만 모아보기
-- 로그인 상태면 계정(Supabase)에 저장돼서 기기 바꿔도 유지, 비로그인 상태면 브라우저에만 저장
+drop policy if exists "본인 레시피 수정" on public.recipes;
+create policy "본인 레시피 수정" on public.recipes
+  for update using (auth.uid() = user_id);
 
-**공유하기**
-- 지금 만든 레시피(재료·순서·스푼·밀크·AI 분석 재료까지)를 링크 하나에 통째로 압축(base64url)해서 전달 — 받은 사람이 링크를 열면 그 레시피가 그대로 로드됨
-- 카카오톡(Kakao JS SDK) / X / Threads 공유, 지원 안 되는 환경에서는 OS 공유 시트나 클립보드 복사로 자동 대체
+drop policy if exists "본인 레시피 삭제" on public.recipes;
+create policy "본인 레시피 삭제" on public.recipes
+  for delete using (auth.uid() = user_id);
 
-**계정 & 클라우드 저장**
-- Google / Kakao 로그인 (Supabase Auth)
-- 로그인 상태에서 저장한 레시피는 계정(Supabase DB)에 저장돼서 기기를 바꿔도 로그인만 하면 불러와짐
-- 비로그인 상태에서는 이 브라우저에만 저장됨 (localStorage)
+-- 수정 시각 자동 갱신
+create or replace function public.set_updated_at()
+returns trigger as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$ language plpgsql;
 
-## 파일 구조
+drop trigger if exists recipes_set_updated_at on public.recipes;
+create trigger recipes_set_updated_at
+  before update on public.recipes
+  for each row execute function public.set_updated_at();
 
-```
-onao-lab/
-  index.html          앱 본체 (UI + 로직 전부 단일 파일)
-  api/analyze.js       재료 영양성분 AI 분석용 Vercel 서버리스 함수 (Anthropic API 키는 여기서만 사용)
-  package.json         Vercel이 프로젝트를 인식하기 위한 최소 설정
-  supabase_schema.sql  레시피 저장 테이블 + RLS 보안 정책 SQL
-  README.md            이 문서
-```
+-- ============================================================
+-- 전역 재료 캐시: 한 번 AI로 분석된 재료는 모든 사용자가 공유해서 재사용
+-- ============================================================
 
-## 배포 가이드
+create extension if not exists pg_trgm;
 
-### 1. GitHub
+create table if not exists public.ingredients (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,              -- 사람이 입력한 원본 이름 (예: "흑임자맛 프로틴")
+  normalized_name text not null,   -- 공백 제거 + 소문자 (매칭용)
+  emoji text,
+  color text,
+  kcal numeric not null,
+  protein numeric not null,
+  carb numeric not null,
+  fat numeric not null,
+  fiber numeric not null,
+  created_at timestamptz default now()
+);
 
-이 폴더 전체를 GitHub 저장소에 올려주세요 (웹에서 Upload files로 드래그해도 되고, git으로 push해도 돼요).
+-- 유사도 검색 속도를 위한 trigram 인덱스
+create index if not exists ingredients_normalized_trgm_idx
+  on public.ingredients using gin (normalized_name gin_trgm_ops);
 
-### 2. Vercel
+alter table public.ingredients enable row level security;
 
-1. https://vercel.com → GitHub 계정으로 로그인 → **Add New → Project** → 방금 만든 저장소 Import
-2. **Environment Variables**에 추가:
-   - `ANTHROPIC_API_KEY` — console.anthropic.com에서 발급 (재료 AI 분석용, 서버에서만 사용되고 클라이언트엔 노출 안 됨)
-   - `SUPABASE_URL` — `https://프로젝트ID.supabase.co`
-   - `SUPABASE_SERVICE_ROLE_KEY` — Supabase Project Settings → API → **service_role** 키 (⚠️ publishable/anon 키와 다름! 이 키는 RLS를 우회하는 완전 관리자 권한 키라 절대 클라이언트 코드에 넣거나 채팅 등에 노출하면 안 돼요. Vercel 환경변수에만 저장)
-3. Deploy → `https://프로젝트명.vercel.app` 주소 발급
+-- 조회는 누구나 가능 (읽기 전용 공개 캐시)
+drop policy if exists "누구나 재료 조회 가능" on public.ingredients;
+create policy "누구나 재료 조회 가능" on public.ingredients
+  for select using (true);
 
-Vercel과 GitHub을 연결해두면, 이후 GitHub에 파일을 새로 올릴 때마다 **자동으로 재배포**돼요.
+-- insert/update/delete 정책은 의도적으로 만들지 않음 -> RLS가 기본 차단.
+-- 새 재료 등록은 서버(api/analyze.js, service_role 키)를 통해서만 가능.
 
-### 3. Supabase (로그인 + 클라우드 저장)
+-- 입력한 이름과 가장 비슷한 기존 재료 1개를 찾는 함수 (유사도 임계값 기본 0.35)
+create or replace function public.match_ingredient(search_name text, min_similarity real default 0.35)
+returns setof public.ingredients
+language sql stable
+as $$
+  select *
+  from public.ingredients
+  where similarity(normalized_name, search_name) > min_similarity
+  order by similarity(normalized_name, search_name) desc
+  limit 1;
+$$;
 
-1. https://supabase.com → 새 프로젝트 생성 (Region: Seoul 추천)
-2. SQL Editor에서 `supabase_schema.sql` 실행 → `recipes` 테이블(RLS) + `ingredients` 공유 캐시 테이블(pg_trgm 유사도 검색 함수 포함) 생성
-3. Project Settings → API에서 **Project URL**, **anon/publishable key** 확인 → `index.html`의 `SUPABASE_URL`, `SUPABASE_KEY` 값과 일치하는지 확인
-4. Authentication → Sign In/Up에서 **Google**, **Kakao** Provider 각각 활성화
-   - Google: Google Cloud Console에서 OAuth 클라이언트 ID 생성 → Client ID/Secret을 Supabase에 입력
-   - Kakao: developers.kakao.com에서 앱 생성 → 카카오 로그인 활성화 → REST API 키 + Client Secret을 Supabase에 입력
-   - 두 경우 모두 Supabase가 보여주는 **Callback URL**을 각 플랫폼의 Redirect URI에 등록해야 함
+-- ============================================================
+-- 즐겨찾기: 기본/커스텀/클라우드 레시피 공통으로 recipe_ref(레시피 id 문자열)만 저장
+-- ============================================================
 
-### 4. 카카오톡 공유하기 (선택)
+create table if not exists public.favorites (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users(id) on delete cascade not null default auth.uid(),
+  recipe_ref text not null,   -- 앱에서 쓰는 레시피 id (예: "r1", "cloud-uuid", "custom-169...")
+  created_at timestamptz default now(),
+  unique (user_id, recipe_ref)
+);
 
-로그인용 카카오 앱과는 별개로, "카카오톡 공유하기" 기능은 Kakao JavaScript 키가 필요해요.
+alter table public.favorites enable row level security;
 
-1. developers.kakao.com → 앱 설정 → 플랫폼 → Web 플랫폼에 배포 도메인 등록
-2. 제품 설정 → 카카오톡 공유 활성화
-3. JavaScript 키를 `index.html`의 `Kakao.init('...')` 값과 일치시키기
+drop policy if exists "본인 즐겨찾기 조회" on public.favorites;
+create policy "본인 즐겨찾기 조회" on public.favorites
+  for select using (auth.uid() = user_id);
 
-## 참고
+drop policy if exists "본인 즐겨찾기 추가" on public.favorites;
+create policy "본인 즐겨찾기 추가" on public.favorites
+  for insert with check (auth.uid() = user_id);
 
-- API 키(Anthropic)와 OAuth Client Secret은 절대 `index.html`이나 다른 클라이언트 코드에 직접 넣지 마세요. `ANTHROPIC_API_KEY`는 Vercel 환경변수로, OAuth Secret은 Supabase 대시보드에만 입력합니다.
-- Supabase publishable key와 Kakao JavaScript 키는 클라이언트에 노출되도록 설계된 공개 키라 코드에 그대로 있어도 안전해요. 대신 각 서비스의 콘솔에서 "허용 도메인"을 등록해두는 것으로 오남용을 막습니다.
-- Claude 아티팩트 미리보기 안에서는 `window.storage`(자체 영구 저장소)를, 실제 배포된 사이트에서는 브라우저 `localStorage`를 자동으로 사용하도록 되어 있어요.
+drop policy if exists "본인 즐겨찾기 삭제" on public.favorites;
+create policy "본인 즐겨찾기 삭제" on public.favorites
+  for delete using (auth.uid() = user_id);
+
+-- ============================================================
+-- 공유 링크: 레시피를 저장하고 짧은 코드(share_code)로 공유
+-- ============================================================
+
+create table if not exists public.shared_recipes (
+  id uuid primary key default gen_random_uuid(),
+  share_code text not null unique,   -- URL에 들어가는 짧은 코드 (예: "Ax7k2p")
+  payload jsonb not null,            -- 레시피 전체 데이터 (이름/재료/밀크/커스텀재료 등)
+  created_at timestamptz default now()
+);
+
+create index if not exists shared_recipes_code_idx on public.shared_recipes (share_code);
+
+alter table public.shared_recipes enable row level security;
+
+-- 공유 링크는 누구나 조회 가능 (로그인 없이 링크만 있으면 열람)
+drop policy if exists "누구나 공유레시피 조회" on public.shared_recipes;
+create policy "누구나 공유레시피 조회" on public.shared_recipes
+  for select using (true);
+
+-- 누구나 공유 링크 생성 가능 (로그인 없이도 공유하기 사용 가능)
+drop policy if exists "누구나 공유레시피 생성" on public.shared_recipes;
+create policy "누구나 공유레시피 생성" on public.shared_recipes
+  for insert with check (true);
+
+-- ============================================================
+-- 식단 트래커: 날짜별 목표/끼니 기록 (사용자별)
+-- ============================================================
+
+create table if not exists public.diet_logs (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users(id) on delete cascade not null default auth.uid(),
+  log_date date not null,
+  weight numeric,              -- 목표 몸무게
+  workout boolean default false, -- 운동일 여부 (탄수 사이클링)
+  meals jsonb not null default '{"breakfast":[],"lunch":[],"dinner":[],"snack":[]}',
+  created_at timestamptz default now(),
+  updated_at timestamptz default now(),
+  unique (user_id, log_date)
+);
+
+alter table public.diet_logs enable row level security;
+
+drop policy if exists "본인 식단 조회" on public.diet_logs;
+create policy "본인 식단 조회" on public.diet_logs
+  for select using (auth.uid() = user_id);
+
+drop policy if exists "본인 식단 생성" on public.diet_logs;
+create policy "본인 식단 생성" on public.diet_logs
+  for insert with check (auth.uid() = user_id);
+
+drop policy if exists "본인 식단 수정" on public.diet_logs;
+create policy "본인 식단 수정" on public.diet_logs
+  for update using (auth.uid() = user_id);
+
+drop policy if exists "본인 식단 삭제" on public.diet_logs;
+create policy "본인 식단 삭제" on public.diet_logs
+  for delete using (auth.uid() = user_id);
+
+drop trigger if exists diet_logs_set_updated_at on public.diet_logs;
+create trigger diet_logs_set_updated_at
+  before update on public.diet_logs
+  for each row execute function public.set_updated_at();
+
+-- 식단 스타일 (균형/저탄고지/카니보어) 컬럼 — 재실행 안전
+alter table public.diet_logs add column if not exists diet text default 'balanced';
