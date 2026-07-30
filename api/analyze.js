@@ -1,37 +1,81 @@
 // Vercel Serverless Function (Node.js runtime)
-// Keeps the Anthropic API key on the server. Set ANTHROPIC_API_KEY in
-// Vercel Project Settings -> Environment Variables (never commit it).
+// - Anthropic API key and Supabase service_role key stay on the server only.
+//   Set both in Vercel Project Settings -> Environment Variables (never commit them).
+// - Before calling the AI, checks a shared Supabase table for an existing (or
+//   similarly-named) ingredient so the same lookup is never paid for twice,
+//   across ALL users of the app, not just one browser.
+
+function normalizeName(s) {
+  return (s || '').trim().toLowerCase().replace(/\s+/g, '');
+}
 
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     return res.status(500).json({ error: 'ANTHROPIC_API_KEY가 서버에 설정되어 있지 않아요.' });
   }
 
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const hasDb = !!(supabaseUrl && serviceKey);
+
   let body = req.body;
   if (typeof body === 'string') {
     try { body = JSON.parse(body); } catch (e) { body = {}; }
   }
   const name = (body && body.name || '').trim();
-  if (!name) {
-    return res.status(400).json({ error: '재료 이름(name)이 필요해요.' });
+  if (!name) return res.status(400).json({ error: '재료 이름(name)이 필요해요.' });
+  const mode = (body && body.mode) === 'meal' ? 'meal' : 'ingredient';
+
+  const normalized = normalizeName(name);
+
+  // 1) shared cache lookup (exact or fuzzy match via pg_trgm) — 재료 모드에서만
+  if (hasDb && mode === 'ingredient') {
+    try {
+      const dbHeaders = {
+        'Content-Type': 'application/json',
+        apikey: serviceKey,
+        Authorization: `Bearer ${serviceKey}`
+      };
+      const matchRes = await fetch(`${supabaseUrl}/rest/v1/rpc/match_ingredient`, {
+        method: 'POST',
+        headers: dbHeaders,
+        body: JSON.stringify({ search_name: normalized, min_similarity: 0.35 })
+      });
+      if (matchRes.ok) {
+        const matches = await matchRes.json();
+        if (Array.isArray(matches) && matches.length > 0) {
+          const m = matches[0];
+          return res.status(200).json({
+            emoji: m.emoji, color: m.color,
+            kcal: m.kcal, protein: m.protein, carb: m.carb, fat: m.fat, fiber: m.fiber,
+            matchedExisting: true,
+            sourceName: m.name
+          });
+        }
+      }
+    } catch (e) {
+      console.warn('재료 캐시 조회 실패, AI로 계속 진행:', e.message);
+    }
   }
 
-  const prompt = `식재료 "${name}"에 대해 다음 JSON만 답해. 마크다운, 설명, 백틱 없이 JSON 객체 하나만:
+  // 2) not found -> ask the AI
+  const prompt = mode === 'meal'
+    ? `음식/요리 "${name}"의 일반적인 1인분 기준 영양성분을 다음 JSON만으로 답해. 마크다운, 설명, 백틱 없이 JSON 객체 하나만:
+{"emoji":"이 음식을 가장 잘 나타내는 이모지 1개","serving":"1인분 기준 설명 (예: 1그릇(300g), 1개(120g))","kcal":1인분 칼로리 숫자,"protein":1인분 단백질 g 숫자,"carb":1인분 탄수화물 g 숫자,"fat":1인분 지방 g 숫자,"fiber":1인분 식이섬유 g 숫자}
+"닭가슴살 2개", "파스타 반 그릇"처럼 수량이 포함되면 그 수량 기준으로 계산해. 일반적인 영양성분 데이터베이스 기준 대표값을 사용해.`
+    : `식재료 "${name}"에 대해 다음 JSON만 답해. 마크다운, 설명, 백틱 없이 JSON 객체 하나만:
 {"emoji":"이 재료를 가장 잘 나타내는 이모지 1개","color":"이 재료의 실제 색을 나타내는 hex 색상코드","kcal":100g당 칼로리 숫자,"protein":100g당 단백질 g 숫자,"carb":100g당 탄수화물 g 숫자,"fat":100g당 지방 g 숫자,"fiber":100g당 식이섬유 g 숫자}
 일반적인 영양성분 데이터베이스 기준 대표값을 사용해.`;
 
+  let parsed;
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -46,25 +90,46 @@ module.exports = async (req, res) => {
         messages: [{ role: 'user', content: prompt }]
       })
     });
-
     const data = await response.json();
     if (!response.ok) {
       const msg = (data && data.error && data.error.message) || 'Anthropic API 호출 실패';
       return res.status(response.status).json({ error: msg });
     }
-
-    const text = (data.content || [])
-      .filter(b => b.type === 'text')
-      .map(b => b.text)
-      .join('');
+    const text = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
     const clean = text.replace(/```json|```/g, '').trim();
-
-    let parsed;
     try { parsed = JSON.parse(clean); }
     catch (e) { return res.status(502).json({ error: 'AI 응답을 해석하지 못했어요.', raw: text }); }
-
-    return res.status(200).json(parsed);
   } catch (err) {
     return res.status(500).json({ error: err.message || '알 수 없는 오류' });
   }
+
+  // 3) persist to the shared cache for next time (best-effort; failure shouldn't break the response)
+  if (hasDb && mode === 'ingredient') {
+    try {
+      await fetch(`${supabaseUrl}/rest/v1/ingredients`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: serviceKey,
+          Authorization: `Bearer ${serviceKey}`,
+          Prefer: 'return=minimal'
+        },
+        body: JSON.stringify({
+          name,
+          normalized_name: normalized,
+          emoji: parsed.emoji,
+          color: parsed.color,
+          kcal: +parsed.kcal || 0,
+          protein: +parsed.protein || 0,
+          carb: +parsed.carb || 0,
+          fat: +parsed.fat || 0,
+          fiber: +parsed.fiber || 0
+        })
+      });
+    } catch (e) {
+      console.warn('재료 캐시 저장 실패(응답은 정상 반환):', e.message);
+    }
+  }
+
+  return res.status(200).json({ ...parsed, matchedExisting: false });
 };
